@@ -66,7 +66,7 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
    - `ChannelRouter` 按来源生成 `DeliveryPlan`；
    - `DecisionPlane` 产出 `TurnPlan`（SystemOne 或启发式）；
    - 语音门只决定发/不发；
-   - respond 时检索记忆卡片；silence/defer 时注入内部说明。
+   - respond 时检索记忆卡片；silence/defer 时先入记忆包，Core 支持 drop 就丢弃整批，否则注入内部说明走语义沉默。
 3. 主模型生成正文/工具调用；JSON 头提供约束，不写进可见正文。
 4. `onBatchEnd` 把本批事件 + 助手输出入队；`onHandoff` 入队快照并注入短交接笔记；钩子不 await。
 5. `MemoryWorker` 串行 fork 提取 → `writeCandidate` 保存决策 → SQLite 事务 → `injectDeferred` 短回执。

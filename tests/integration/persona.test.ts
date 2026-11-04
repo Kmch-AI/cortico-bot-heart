@@ -20,13 +20,14 @@ interface FakeCore extends CoreApi {
   deferred: string[];
 }
 
-function fakeCore(forkImpl?: (opts: any) => Promise<string>): FakeCore {
+function fakeCore(forkImpl?: (opts: any) => Promise<string>, deliveryDrop = false): FakeCore {
   const injected: string[] = [];
   const deferred: string[] = [];
   const info: SessionInfo = { id: 'main', running: 0, snapshot: [], estTokens: null, hardTokens: null };
   const core = {
     injected,
     deferred,
+    deliveryDrop,
     injectInternal: (text: string) => { injected.push(text); },
     injectDeferred: (kind: string, render: () => string | null) => {
       const text = render();
@@ -73,7 +74,11 @@ function event(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
-function makePersona(overrides: Record<string, unknown> = {}, forkImpl?: (opts: any) => Promise<string>) {
+function makePersona(
+  overrides: Record<string, unknown> = {},
+  forkImpl?: (opts: any) => Promise<string>,
+  deliveryDrop = false,
+) {
   const tmp = tempDir();
   cleanups.push(tmp.cleanup);
   const cfg = testConfig({
@@ -93,7 +98,7 @@ function makePersona(overrides: Record<string, unknown> = {}, forkImpl?: (opts: 
     secret: () => '',
     logger: { warn: (m, d) => console.error('WARN', m, d), info: (m, d) => console.error('INFO', m, d) },
   });
-  const core = fakeCore(forkImpl);
+  const core = fakeCore(forkImpl, deliveryDrop);
   persona.attach(core);
   return { persona, core, cfg, dir: tmp.dir };
 }
@@ -119,6 +124,39 @@ describe('HeartPersona integration', () => {
     expect(core.injected.some((t) => t.includes('不值得回应'))).toBe(true);
     const head = JSON.stringify(persona.sessionHead());
     expect(head).toContain('保持沉默');
+    persona.onBatchEnd();
+    persona.shutdown();
+  });
+
+  it('returns drop for silence when Core advertises deliveryDrop', async () => {
+    const { persona, core } = makePersona({}, undefined, true);
+    const decision = await persona.onDelivery({
+      events: [event({ meta: { conv: { kind: 'group', id: 9 } }, text: '今天天气不错' })],
+    });
+    expect(decision).toMatchObject({ action: 'drop' });
+    expect((decision as unknown as { reason?: string }).reason).toContain('silence');
+    expect(core.injected.some((t) => t.includes('不值得回应'))).toBe(false);
+    persona.shutdown();
+  });
+
+  it('keeps semantic silence when silence.mode is semantic even if Core can drop', async () => {
+    const { persona, core } = makePersona({ silence: { mode: 'semantic', threshold: 0.5 } }, undefined, true);
+    const decision = await persona.onDelivery({
+      events: [event({ meta: { conv: { kind: 'group', id: 9 } }, text: '今天天气不错' })],
+    });
+    expect(decision).toBeUndefined();
+    expect(core.injected.some((t) => t.includes('不值得回应'))).toBe(true);
+    persona.onBatchEnd();
+    persona.shutdown();
+  });
+
+  it('falls back to semantic silence when core-drop is configured on stock Core', async () => {
+    const { persona, core } = makePersona({ silence: { mode: 'core-drop', threshold: 0.5 } });
+    const decision = await persona.onDelivery({
+      events: [event({ meta: { conv: { kind: 'group', id: 9 } }, text: '今天天气不错' })],
+    });
+    expect(decision).toBeUndefined();
+    expect(core.injected.some((t) => t.includes('不值得回应'))).toBe(true);
     persona.onBatchEnd();
     persona.shutdown();
   });

@@ -12,4 +12,4 @@
 - 记忆工具：`memory_search` / `memory_read` / `memory_note` / `memory_pin` / `memory_forget`。
 - 按事件来源路由文字与语音：控制台直接文字 + 本机语音；QQ 走 QQ 工具；其他 World 用其自己的 speak 工具。
 - Persona / Memory 页：状态、记忆列表、决策 trace。
-- Core drop 尚未启用；stock Core 上使用语义沉默。`persona/coreCompat.ts` 预留能力探测。
+- 检测 `CoreApi.deliveryDrop`：支持时 silence/defer 返回 `{ action: 'drop' }`，先把事件交给记忆 worker；stock Core 上继续用语义沉默。`silence.mode` 可选 `auto` / `semantic` / `core-drop`。

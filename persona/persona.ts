@@ -114,6 +114,8 @@ export class HeartPersona implements Persona {
   private lastConsolidation = 0;
   private shutdownDone = false;
   private clientKey = '';
+  /** core-drop 模式遇到不支持 drop 的 Core 只告警一次。 */
+  private dropUnsupportedWarned = false;
 
   constructor(private readonly opts: HeartPersonaOptions) {
     this.memoryDir = opts.memoryDir;
@@ -486,18 +488,38 @@ ${chosen.text}`, 'arbiter');
       this.lastMemoryCards = [];
     }
 
-    if (plan.action === 'silence') {
+    if (plan.action === 'silence' || plan.action === 'defer') {
+      if (plan.action === 'defer') this.attention.defer(text, last.source);
+      const drop = this.dropDecision(plan.action, plan.reason);
+      if (drop) {
+        // Core 会丢弃这一批；onBatchEnd 不会运行，先把事件交给记忆 worker，再补回合计数。
+        this.flushPacket();
+        this.turns++;
+        // stock Core 的类型仍只允许 void；支持 deliveryDrop 的 Core 在运行时读这个对象。
+        return drop as unknown as void;
+      }
       this.core?.injectInternal(
-        '[attention] 这一批不值得回应。不要输出正文，不要调用发送工具，直接 end_turn。',
-        'attention',
-      );
-    } else if (plan.action === 'defer') {
-      this.attention.defer(text, last.source);
-      this.core?.injectInternal(
-        '[attention] 这一批先不接；已记到未完成线程。不要输出正文，不要调用发送工具，直接 end_turn。',
+        plan.action === 'silence'
+          ? '[attention] 这一批不值得回应。不要输出正文，不要调用发送工具，直接 end_turn。'
+          : '[attention] 这一批先不接；已记到未完成线程。不要输出正文，不要调用发送工具，直接 end_turn。',
         'attention',
       );
     }
+  }
+
+  /** 沉默/暂缓时是否让 Core 丢弃整批；对应 `silence.mode`。 */
+  private dropDecision(action: 'silence' | 'defer', reason: string): { action: 'drop'; reason: string } | null {
+    const mode = this.opts.config().silence.mode;
+    if (mode === 'semantic') return null;
+    if (!supportsDeliveryDrop(this.core)) {
+      if (mode === 'core-drop' && !this.dropUnsupportedWarned) {
+        this.dropUnsupportedWarned = true;
+        this.opts.logger?.warn('silence.mode=core-drop 但 Core 不支持 deliveryDrop，回退语义沉默');
+      }
+      return null;
+    }
+    const why = reason.trim() ? `${action}: ${reason.trim()}` : action;
+    return { action: 'drop', reason: why.slice(0, 240) };
   }
 
   onBatchEnd(): void {
