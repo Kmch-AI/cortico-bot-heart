@@ -2,16 +2,18 @@
  * 记忆后台 worker。
  *
  * 钩子只入队、不 await；worker 串行执行：
- *   包 → fork 提取（只提议）→ writeCandidate（保存决策）→ SQLite 事务 → 短回执。
- * fork 的工具表只有 memory_propose，不能调 World 工具，不能直接发消息。
+ *   包 → 直连 core.llm 提取（只提议）→ writeCandidate（保存决策）→ SQLite 事务 → 短回执。
+ * 直连不创建 fork/session；工具表只有 memory_propose，不能调 World 工具，不能直接发消息。
  */
 import { randomUUID } from 'node:crypto';
-import type { CoreApi, ToolDef } from 'cortico/core/types.ts';
+import type { Logger, ModelSpec, ToolDef } from 'cortico/core/types.ts';
+import type { ResponseClient } from 'cortico/core/generation.ts';
 import type { ContextRecord } from 'cortico/protocol/open-responses/context.ts';
 import type { MemoryKind, MemoryOp, MemoryScope, MemorySensitivity, MemoryStore } from './types.ts';
 import type { DecisionPlane } from '../decision/fallback.ts';
 import type { EmbeddingService } from './vectors.ts';
 import { writeCandidate, summaryOf } from './write.ts';
+import { runDirectWorker } from './runtime.ts';
 
 export interface MemoryPacket {
   id: string;
@@ -28,7 +30,11 @@ export interface MemoryPacket {
 }
 
 export interface MemoryWorkerOptions {
-  core: () => CoreApi | null;
+  /** Core 的模型客户端；直接请求，不创建 fork/session。 */
+  llm: () => ResponseClient | null;
+  /** 当前端点模型；缺失时跳过提取并写 trace。 */
+  spec: () => ModelSpec | null;
+  log: Logger;
   store: MemoryStore;
   decision: DecisionPlane | null;
   embedding: EmbeddingService | null;
@@ -168,25 +174,38 @@ export class MemoryWorker {
       this.report(packet, summaryOf(result.applied));
       return;
     }
-    const core = this.opts.core();
-    if (!core) return;
     if (packet.events.length === 0 && !packet.assistant) return;
+    const llm = this.opts.llm();
+    const spec = this.opts.spec();
+    if (!llm || !spec) {
+      this.opts.onTrace?.({ task: 'memory.worker', detail: `no model for ${packet.id}` });
+      return;
+    }
 
     const staged: MemoryOp[] = [];
     const propose = this.proposeTool(staged, packet);
     const messages = buildMessages(packet);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('memory extraction timeout')), Math.max(1000, this.opts.timeoutMs));
+    timer.unref?.();
     let text = '';
-    // hidden 是 Core 的隐藏 fork 能力（新增）；旧 Core 忽略这个字段，只是会多一个 session 窗口。
-    const fork = core.spawnFork({
-      id: 'memory',
-      messages,
-      tools: [propose],
-      stopWhen: () => staged.length > 0,
-      wrapUpHint: '收线：没整理完的部分丢弃，不要编造；只提交有证据的候选。',
-      capNote: '记忆提取达到轮数上限，未提交的部分丢弃。',
-      hidden: true,
-    } as Parameters<CoreApi['spawnFork']>[0]);
-    text = await withTimeout(fork, this.opts.timeoutMs, '');
+    try {
+      // 直连 core.llm：不登记 session，控制台不会多出 memory-N 窗口。
+      const result = await runDirectWorker({
+        llm,
+        spec,
+        messages,
+        tools: [propose],
+        log: this.opts.log,
+        role: 'memory',
+        maxRounds: 2,
+        signal: controller.signal,
+        stopWhen: () => staged.length > 0,
+      });
+      text = result.text;
+    } finally {
+      clearTimeout(timer);
+    }
 
     // 模型没走工具时，尝试从正文里读结构化 JSON；仍然要经过同一套校验。
     if (staged.length === 0 && text.trim()) {
@@ -407,15 +426,3 @@ function parseProposalText(text: string, packet: MemoryPacket): MemoryOp[] {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(1000, timeoutMs));
-        timer.unref?.(); }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}

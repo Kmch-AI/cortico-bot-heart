@@ -6,12 +6,14 @@
  * - 钩子不 await 记忆任务；只入队，worker 在后台串行处理。
  * - stock Core 上沉默是语义沉默：注入一句“不要回应”，主模型仍会跑一次。
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   BlobStore,
   CoreApi,
   OutputTap,
+  Logger,
+  ModelSpec,
   Persona,
   PersonaWebUiDecl,
   PrefixSegment,
@@ -32,6 +34,7 @@ import type { HeartConfig } from '../config.ts';
 import { createMemoryStore } from '../memory/store.ts';
 import type { MemoryCandidate, MemoryCard, MemoryRecord, MemoryScope, MemoryStore } from '../memory/types.ts';
 import { MemoryWorker, type MemoryPacket } from '../memory/worker.ts';
+import { runDirectText } from '../memory/runtime.ts';
 import { memoryTools, memoryToolDecls } from '../memory/tools.ts';
 import { retrieveMemories } from '../memory/retrieve.ts';
 import { consolidate } from '../memory/consolidate.ts';
@@ -52,8 +55,12 @@ import { FileBlobStore } from './blobs.ts';
 import { supportsDeliveryDrop } from './coreCompat.ts';
 
 const MAIN = 'main';
-const MEMORY = 'memory';
-const ARBITER = 'arbiter';
+
+const NOOP_LOG: Logger = {
+  trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
+  emit: () => {},
+  child: () => NOOP_LOG,
+};
 
 export interface HeartPersonaOptions {
   memoryDir: string;
@@ -199,7 +206,9 @@ export class HeartPersona implements Persona {
     this.decision = this.makeDecision();
     this.clientKey = this.currentClientKey();
     this.worker = new MemoryWorker({
-      core: () => this.core,
+      llm: () => this.core?.llm ?? null,
+      spec: () => this.activeSpec(),
+      log: this.core?.log ?? NOOP_LOG,
       store: this.store,
       decision: this.decision,
       embedding: cfg.memory.autoEmbedding ? this.embedding : null,
@@ -272,22 +281,6 @@ export class HeartPersona implements Persona {
         receivesEvents: true,
         get outputTap() { return tap; },
         tools: () => [...this.worldTools(), ...this.ownTools()],
-      },
-      {
-        id: MEMORY,
-        label: MEMORY,
-        rounds: () => ({ soft: 3, hard: 5 }),
-        persistent: false,
-        receivesEvents: false,
-        tools: () => [],
-      },
-      {
-        id: ARBITER,
-        label: ARBITER,
-        rounds: () => ({ soft: 1, hard: 2 }),
-        persistent: false,
-        receivesEvents: false,
-        tools: () => [],
       },
     ];
   }
@@ -470,12 +463,25 @@ export class HeartPersona implements Persona {
         count: cfg.output.candidates,
       });
       try {
-        const text = await withTimeout(this.core.spawnFork({
-          id: ARBITER,
-          messages: [userRecord(brief)],
-          tools: [],
-          wrapUpHint: '收线：只保留候选正文。',
-        }), cfg.output.timeoutMs, '');
+        const spec = this.activeSpec();
+        if (!spec) throw new Error('没有可用模型');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(new Error('arbiter timeout')), Math.max(200, cfg.output.timeoutMs));
+        timer.unref?.();
+        let text = '';
+        try {
+          // 直连 core.llm：不创建 fork session，控制台不会为候选生成多出一个窗口。
+          text = await runDirectText({
+            llm: this.core.llm,
+            spec,
+            messages: [userRecord(brief)],
+            log: this.core.log,
+            role: 'arbiter',
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
         const candidates = parseCandidates(text, cfg.output.candidates);
         if (candidates.length > 1) {
           const chosenId = await this.decision.arbiter(brief, candidates);
@@ -635,7 +641,17 @@ ${chosen.text}`, 'arbiter');
 
   webUi(language: 'zh' | 'en' = 'zh'): PersonaWebUiDecl {
     const zh = language === 'zh';
+    const started = !!this.store;
     return {
+      badges: [
+        { label: zh ? '心情' : 'Mood', value: started ? this.mood.current().label : '—' },
+        { label: zh ? '记忆' : 'Memory', value: started ? this.store.stats().active : '—' },
+        {
+          label: zh ? '后台' : 'Worker',
+          value: started ? (this.worker.busy ? `${zh ? '运行' : 'busy'} · ${this.worker.pending}` : (zh ? '空闲' : 'idle')) : '—',
+          tone: started && this.worker.busy ? 'on' : 'off',
+        },
+      ],
       panels: [
         { id: 'heart', title: zh ? '心' : 'Heart', getMethods: ['status', 'memories'] },
         { id: 'service', title: zh ? '服务' : 'Service', getMethods: ['probe'] },
@@ -733,7 +749,11 @@ ${chosen.text}`, 'arbiter');
     if ((panel === 'heart' && method === 'memories') || (panel === 'memories' && method === 'list')) {
       const filter = (args[0] ?? {}) as { query?: string; kind?: string; tier?: string; limit?: number };
       if (filter.query) {
-        return this.store.search({ text: filter.query, limit: Math.min(50, filter.limit ?? 20) }).map((h) => h.record);
+        const limit = Math.min(100, filter.limit ?? 20);
+        const rows = this.store.search({ text: filter.query, limit }).map((h) => h.record)
+          .filter((r) => !filter.kind || r.kind === filter.kind)
+          .filter((r) => !filter.tier || r.tier === filter.tier);
+        return rows.slice(0, limit);
       }
       return this.store.list({
         kinds: filter.kind ? [filter.kind as never] : undefined,
@@ -789,7 +809,7 @@ ${chosen.text}`, 'arbiter');
       });
     }
     if (panel === 'decisions' && method === 'traces') {
-      return this.lastTrace ? [this.lastTrace] : [];
+      return this.recentTraces(50);
     }
     throw new Error(`heart 面板没有 ${panel}.${method}`);
   }
@@ -806,6 +826,32 @@ ${chosen.text}`, 'arbiter');
 
   private countFiles(sub: 'decisions' | 'export'): number {
     return this.listFiles(sub).length;
+  }
+
+  /** 最近的决策 trace；按日期文件倒序读，最多 limit 条。 */
+  private recentTraces(limit = 50): DecisionTrace[] {
+    const files = this.listFiles('decisions').filter((name) => name.endsWith('.jsonl')).sort().reverse();
+    const out: DecisionTrace[] = [];
+    for (const name of files) {
+      let lines: string[];
+      try {
+        lines = readFileSync(join(this.memoryDir, 'decisions', name), 'utf8').split('\n').filter((line) => line.trim());
+      } catch {
+        continue;
+      }
+      for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
+        try { out.push(JSON.parse(lines[i]!) as DecisionTrace); } catch { /* 跳过坏行 */ }
+      }
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /** 当前端点的模型参数；后台直连 core.llm 时用它，不经过 fork。 */
+  private activeSpec(): ModelSpec | null {
+    const cfg = this.opts.config();
+    const entry = cfg.providers?.[cfg.activeProvider];
+    return entry?.spec ? structuredClone(entry.spec) : null;
   }
 
   /** 当前读取的提示词源：部署覆盖存在就用它，否则用包内模板。 */
@@ -1053,15 +1099,3 @@ function userRecord(text: string): ContextRecord {
   };
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(200, timeoutMs));
-        timer.unref?.(); }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}

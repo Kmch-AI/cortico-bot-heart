@@ -38,7 +38,8 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
 | `memory/types.ts` | 记录、候选、操作、查询、Store 接口 |
 | `memory/sqlite.ts` | SQLite 主存储、FTS、可选 sqlite-vec |
 | `memory/store.ts` | 存储工厂与 JSONL 降级 |
-| `memory/worker.ts` | 后台队列、fork 提取、结构化提交、回注 |
+| `memory/worker.ts` | 后台队列、直连 `core.llm` 提取、结构化提交 |
+| `memory/runtime.ts` | 不建 session 的后台工具循环（记忆提取 / arbiter） |
 | `memory/write.ts` | 保存决策与事务写入 |
 | `memory/retrieve.ts` | 查询构造、混合召回、MMR、预算 |
 | `memory/consolidate.ts` | 合并、分层、容量控制 |
@@ -53,7 +54,7 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
 ## Session
 
 - `main`：`persistent: true`、`receivesEvents: true`。工具 = 挂载 World 工具 + `memory_*` + `end_turn`。
-- `memory`：后台 fork 用，非持久、不接收事件；工具表只含 `memory_propose`。
+- 后台记忆提取与 arbiter 直接调用 `core.llm`，不声明也不创建临时 session。
 - `sessionHead()` 每次请求生成状态卡、turn plan、DeliveryPlan、记忆卡片；不写入持久历史。
 - 静态人格与协议在 `systemSegments`，保持前缀稳定。
 
@@ -69,7 +70,7 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
    - respond 时检索记忆卡片；silence/defer 时先入记忆包，Core 支持 drop 就丢弃整批，否则注入内部说明走语义沉默。
 3. 主模型生成正文/工具调用；JSON 头提供约束，不写进可见正文。
 4. `onBatchEnd` 把本批事件 + 助手输出入队；`onHandoff` 入队快照并注入短交接笔记；钩子不 await。
-5. `MemoryWorker` 串行 fork 提取 → `writeCandidate` 保存决策 → SQLite 事务 → `injectDeferred` 短回执。
+5. `MemoryWorker` 串行直连 `core.llm` 提取 → `writeCandidate` 保存决策 → SQLite 事务 → trace；不建 session、不回注。
 6. `onIdle` / 定时器触发心情衰减、注意力衰减、确定性巩固。
 
 ## 失败隔离
@@ -78,7 +79,7 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
 - 记忆失败：本轮不注入记忆；后台重试；绝不因记忆失败而停止对话。
 - SQLite 忙：短 busy timeout；失败的包由 worker 有界重试（最多 3 次），仍失败写 trace，不影响主对话。
 - 语音失败：退回来源渠道文字；不重复合成、不绕过 QQ 确认。
-- 后台 fork 失败/超时：丢弃该包并写 trace；下一次再整理。
+- 后台直连请求失败/超时：丢弃该包并写 trace；下一次再整理。
 
 ## 不做
 

@@ -7,9 +7,10 @@
 - 修复记忆写不进：用户姓名等“关于某人的事实”不再被当成核心身份卡进待审队列；只有 bot 自己的全局自述进入 `identity:pending`。
 - 显式「记住」覆盖 SystemOne 的 skip/defer（精确重复仍去重），并保证当回合回复；自主记忆保持静默。
 - 移除 `memory.result` 回注：它会被 Core 渲染成 user 消息、唤醒主模型并污染历史；写入结果只留 trace 与 Memory 页。
-- 记忆 fork 传 `hidden: true`；支持隐藏 fork 的 Core 不再为每次记忆多开 session 窗口（旧 Core 忽略该字段）。
+- 记忆提取与 arbiter 改为直连 `core.llm` 的后台工作循环（`memory/runtime.ts`），不创建 fork/session；stock Core 上控制台也不再为每次记忆多开窗口，无需改 Core。代价是后台调用不进 session/用量表，只写决策 trace。
 - PREFIX / BEHAVIOR / MEMORY_PROTOCOL 支持部署覆盖：WebUI 保存到 `<部署根>/prompts/`，运行时优先读覆盖；包内模板保持只读。
 - Memory 页新增「待审核心身份」，可批准或拒绝；修复 `identity:pending` 无入口的问题。
+- Persona / Memory 页界面重做：状态概览、记忆搜索与类型/层级筛选、详情抽屉、决策历史表、服务探测；配置页按身份、决策、记忆、检索、输出分组。
 - 修复巩固定时器重复累积：接管时清理旧的 `consolidate` 定时器，并只保留一个待触发条目。
 - 修正 `docs/systemone.md` 的 wire format、`docs/async-memory.md` 的回注说明与 `docs/memory.md` 的身份边界。
 

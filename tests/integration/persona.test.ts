@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CoreApi, EventEnvelope, ToolDef, World } from 'cortico/core/types.ts';
 import type { SessionInfo } from 'cortico/core/types.ts';
+import type { ResponseClient } from 'cortico/core/generation.ts';
 import { HeartPersona, isExplicitMemoryRequest } from '../../persona/persona.ts';
 import { testConfig, tempDir } from '../helpers.ts';
 
@@ -19,15 +20,42 @@ function world(id: string, tools: ToolDef[]): World {
 interface FakeCore extends CoreApi {
   injected: string[];
   deferred: string[];
+  forks: number;
 }
 
-function fakeCore(forkImpl?: (opts: any) => Promise<string>, deliveryDrop = false): FakeCore {
+function assistantMessage(text = ''): unknown {
+  return {
+    type: 'message', id: 'msg_test', status: 'completed', role: 'assistant',
+    content: [{ type: 'output_text', text, annotations: [] }],
+  };
+}
+
+/** 直连 core.llm 的假客户端；默认只回一段空正文，不产生工具调用。 */
+function fakeLlm(output?: unknown[] | ((request: { tools?: readonly { name: string }[] }) => unknown[])): ResponseClient {
+  const client: ResponseClient = {
+    respond: async (request) => ({
+      response: {
+        id: 'resp_test',
+        status: 'completed',
+        output: typeof output === 'function' ? output(request as never) : output ?? [assistantMessage()],
+      } as never,
+      origin: { instance: 'test', module: 'test', model: 'test', compatibilityDomain: 'test' },
+      attempts: [],
+    }),
+    bind: () => client,
+  };
+  return client;
+}
+
+function fakeCore(llm: ResponseClient = fakeLlm(), deliveryDrop = false): FakeCore {
   const injected: string[] = [];
   const deferred: string[] = [];
+  let forks = 0;
   const info: SessionInfo = { id: 'main', running: 0, snapshot: [], estTokens: null, hardTokens: null };
   const core = {
     injected,
     deferred,
+    get forks() { return forks; },
     deliveryDrop,
     injectInternal: (text: string) => { injected.push(text); },
     injectDeferred: (kind: string, render: () => string | null) => {
@@ -36,9 +64,9 @@ function fakeCore(forkImpl?: (opts: any) => Promise<string>, deliveryDrop = fals
     },
     injectExternal: () => {},
     requestContextHandoff: () => false,
-    spawnFork: forkImpl ?? (async () => ''),
+    spawnFork: async () => { forks++; return ''; },
     sessionInfo: () => info,
-    llm: {} as never,
+    llm,
     timers: {
       set: () => ({ ok: true as const, id: 't1' }),
       cancel: () => true,
@@ -77,12 +105,20 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 function makePersona(
   overrides: Record<string, unknown> = {},
-  forkImpl?: (opts: any) => Promise<string>,
+  llm: ResponseClient = fakeLlm(),
   deliveryDrop = false,
 ) {
   const tmp = tempDir();
   cleanups.push(tmp.cleanup);
   const cfg = testConfig({
+    providers: {
+      test: {
+        kind: 'openai-responses-compat',
+        baseUrl: 'http://test',
+        spec: { model: 'test', thinking: false },
+      },
+    },
+    activeProvider: 'test',
     decision: { enabled: false },
     vectors: { enabled: false },
     ...overrides,
@@ -100,7 +136,7 @@ function makePersona(
     secret: () => '',
     logger: { warn: (m, d) => console.error('WARN', m, d), info: (m, d) => console.error('INFO', m, d) },
   });
-  const core = fakeCore(forkImpl, deliveryDrop);
+  const core = fakeCore(llm, deliveryDrop);
   persona.attach(core);
   return { persona, core, cfg, dir: tmp.dir };
 }
@@ -175,10 +211,10 @@ describe('HeartPersona integration', () => {
     persona.shutdown();
   });
 
-  it('runs the memory worker asynchronously without waking the main session', async () => {
-    const { persona, core } = makePersona({}, async (opts: any) => {
-      const propose = opts.tools.find((t: any) => t.name === 'memory_propose');
-      await propose.handler({
+  it('runs the memory worker directly through core.llm without a fork or wake-up', async () => {
+    const llm = fakeLlm(() => [{
+      type: 'function_call', id: 'fc_test', call_id: 'call_test', name: 'memory_propose', status: 'completed',
+      arguments: JSON.stringify({
         ops: [{
           op: 'create',
           candidate: {
@@ -190,14 +226,16 @@ describe('HeartPersona integration', () => {
             sensitivity: 'normal',
           },
         }],
-      }, {});
-      return '';
-    });
+      }),
+    }]);
+    const { persona, core } = makePersona({}, llm);
     await persona.onDelivery({ events: [event({ text: '我早上都喝美式' })] });
     persona.onBatchEnd();
     // 钩子已返回；后台 worker 继续跑。
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(persona.store.stats().active).toBe(1);
+    // 不创建 fork/session 窗口。
+    expect(core.forks).toBe(0);
     // 自主记忆保持静默：不向主会话注入任何回执。
     expect(core.deferred).toHaveLength(0);
     expect(core.injected).toHaveLength(0);

@@ -51,7 +51,7 @@ heart 直接使用数值并四舍五入到最近等级。
   （StartLux 不校验该字段，实际上限取决于引擎上下文）。
 - `questions` 1–64；`choice` 1–26 项（heart 至少要求 2）；`score` 2–10 级。
 - `confidence` 是按模型校准的 top probability，阈值不能跨模型复用。
-- SystemOne 不生成文本；`selfIntent`、记忆正文、查询串、`voiceInstruct` 由主模型/fork 写。
+- SystemOne 不生成文本；`selfIntent`、记忆正文、查询串、`voiceInstruct` 由主模型或后台直连调用写。
 
 ## 任务
 

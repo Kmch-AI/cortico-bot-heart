@@ -1,3 +1,4 @@
+.heart-grid { display: grid; gap: 14px; }
 .heart-status { display: grid; gap: 14px; }
 .heart-mood { display: grid; gap: 4px; }
 .heart-label { font-size: 22px; font-weight: 600; letter-spacing: .02em; }
@@ -10,3 +11,5 @@
 .heart-memory:last-child { border-bottom: 0; padding-bottom: 0; }
 .heart-memory-title { font-weight: 600; }
 .heart-memory-body { font-size: 13px; line-height: 1.55; }
+.heart-bad { color: var(--bad, #b42318); font-size: 12px; line-height: 1.5; }
+.heart-chips { display: flex; flex-wrap: wrap; gap: 6px; }

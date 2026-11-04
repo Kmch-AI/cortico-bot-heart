@@ -8,7 +8,7 @@ Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持�
 
 - **选择性说话**：按心情、关系、话题相关度、是否被点名，决定回复、观察（Core 支持时零成本 drop，否则语义沉默）或稍后。
 - **持久记忆**：SQLite 为真源；写入走保存决策；检索按 hot/warm/cold 与 scope 过滤；记忆是人格的载体。
-- **异步记忆**：钩子只入队，后台 fork 提取；写入不回注主会话，自主记忆保持静默；不阻塞主回合。
+- **异步记忆**：钩子只入队，后台直连 `core.llm` 提取；不建 fork/session，不回注主会话，自主记忆保持静默。
 - **语音决策**：只决定「发 / 不发」；发到控制台本机、QQ 还是其他 World，由事件来源和该 World 的 speak 工具决定。
 - **SystemOne**：服务插件提供的 `/v1/systemone` typed questions（`noul` / `choice` / `score`）；不可用时降级到启发式。
 
@@ -57,9 +57,9 @@ blobs/                mem: 句柄
 
 - 检测 `CoreApi.deliveryDrop`：支持时沉默/暂缓返回 `{ action: 'drop' }`，不写 session、不调主模型；stock Core 上仍是语义沉默，会跑一次主模型。见 `docs/core-drop.md`。
 - 服务插件 0.7.0 已提供 `/v1/systemone`、`/v1/embeddings`、`/v1/rerank`；StartLux 是 `llamacpp` 条目下的模型（`tasks: ['systemone']`），不再单独建 systemone 服务。部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关。服务不可用时仍走降级。
-- 输出 arbiter 已接线：默认 `auto`，只在 `needsArbiter` 或 `output.mode=arbiter` 时 fork 候选；候选只做文本，不执行工具。
+- 输出 arbiter 已接线：默认 `auto`，只在 `needsArbiter` 或 `output.mode=arbiter` 时直连 `core.llm` 生成候选；候选只做文本，不执行工具、不建 session。
 - 显式「记住」会覆盖 SystemOne 的 skip/defer 并保证当回合回复；不向用户确认保存成功/失败。
-- 自主记忆写入不回注；用户明确要求记住时才在当回合回复。后台 fork 传 `hidden: true`，支持隐藏 fork 的 Core 不会在控制台多开 session 窗口。
+- 自主记忆写入不回注；用户明确要求记住时才在当回合回复。记忆提取与 arbiter 直连 `core.llm`，不创建 fork/session，stock Core 上控制台也不会多开窗口；代价是这些后台调用不进 session/用量表，只写决策 trace。
 - 提示词页可编辑 PREFIX / BEHAVIOR / MEMORY_PROTOCOL；保存写到 `<部署根>/prompts/`，保存后在会话页重载前缀。
 - 用户姓名等“关于某人的事实”存为 semantic/relationship，不进入核心身份待审；Memory 页可批准/拒绝待审核心身份。
 

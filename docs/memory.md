@@ -32,7 +32,7 @@
 ```
 钩子 packet（不 await）
   → worker 串行
-  → fork 提取（只提议，工具 memory_propose）
+  → 直连 core.llm 提取（只提议，工具 memory_propose）
   → 确定性去重 + top-8 邻居
   → SystemOne memory_write（save/op/target/confidence/salience）
   → MemoryStore.apply（SQLite 事务：records/versions/evidence/links/audit）
@@ -74,7 +74,7 @@
 - identity / relationship / commitment 升 hot；
 - warm 超限时低 salience/长期未访问记录冷化。
 
-语义总结（多条 episode → 一条 semantic）需要后台 fork，0.1 暂未自动执行；可在 Memory 页手动触发确定性巩固。
+语义总结（多条 episode → 一条 semantic）需要后台模型调用，0.1 暂未自动执行；可在 Memory 页手动触发确定性巩固。
 
 ## 工具
 
@@ -86,7 +86,7 @@
 | `memory_pin` | 调整 hot/warm/cold |
 | `memory_forget` | 请求忘记；默认只记录请求，操作者确认后删除 |
 
-`memory_propose` / `memory_consolidate` 只出现在后台 fork，不暴露给主 session。
+`memory_propose` / `memory_consolidate` 只出现在后台工作循环，不暴露给主 session。
 
 ## 人格即记忆
 
