@@ -1,0 +1,5 @@
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - cortico@0.2.12
+  - sqlite-vec@0.1.9

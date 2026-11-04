@@ -1,0 +1,243 @@
+{
+  "tools": [
+    {
+      "name": "memory_search",
+      "description": "Search long-term memory. Returns compact cards, not full records. Use when you need a detail the injected cards do not cover.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for."
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "global",
+              "person",
+              "group",
+              "thread"
+            ]
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "relationship",
+              "preference",
+              "semantic",
+              "episodic",
+              "procedural",
+              "commitment",
+              "affective",
+              "goal"
+            ]
+          },
+          "include_cold": {
+            "type": "boolean",
+            "description": "Also search archived/cold memories."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "检索长期记忆，返回紧凑卡片。",
+        "en": "Search long-term memory and return compact cards."
+      }
+    },
+    {
+      "name": "memory_read",
+      "description": "Read one memory record with its evidence and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Memory id, e.g. mem_..."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "读取一条记忆的正文与证据。",
+        "en": "Read one memory with its evidence."
+      }
+    },
+    {
+      "name": "memory_note",
+      "description": "Propose a durable memory. It goes through the save decision; it is not written immediately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "relationship",
+              "preference",
+              "semantic",
+              "episodic",
+              "procedural",
+              "commitment",
+              "affective",
+              "goal"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "content": {
+            "type": "string",
+            "description": "Normalized short fact/preference/episode."
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "global",
+              "person",
+              "group",
+              "thread"
+            ]
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "private",
+              "secret"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "content"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "提议保存一条记忆；走保存决策，不直接写入。",
+        "en": "Propose a durable memory; it goes through the save decision."
+      }
+    },
+    {
+      "name": "memory_pin",
+      "description": "Raise or lower a memory tier. Does not change facts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "hot",
+              "warm",
+              "cold"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "tier"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "调整记忆的冷热层级。",
+        "en": "Raise or lower a memory tier."
+      }
+    },
+    {
+      "name": "memory_forget",
+      "description": "Request forgetting a memory. Without confirm=true it only marks the request; the operator confirms in the Memory page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "hard": {
+            "type": "boolean",
+            "description": "Physically delete after confirmation."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Only set when the operator explicitly confirmed."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "请求忘记一条记忆，默认需要操作者确认。",
+        "en": "Request forgetting a memory; operator confirmation is required by default."
+      }
+    },
+    {
+      "name": "end_turn",
+      "description": "End this turn: nothing more you want to say or do right now. New events will wake you again. This is the normal way to finish a turn.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "flow"
+      ],
+      "summary": {
+        "zh": "结束这一轮，等新事件再醒。",
+        "en": "End the turn until new events arrive."
+      }
+    }
+  ],
+  "bot": {
+    "worlds": [
+      "console",
+      "qq",
+      "voice",
+      "service"
+    ],
+    "memory": {
+      "name": "Memory",
+      "form": {
+        "zh": "SQLite（node:sqlite + 可选 sqlite-vec）为运行真源；JSONL 只做审计/导出；Memory 页可检索、读取、分层与删除。",
+        "en": "SQLite (node:sqlite + optional sqlite-vec) is the runtime source of truth; JSONL is audit/export only; the Memory page can search, read, tier and delete."
+      }
+    }
+  }
+}

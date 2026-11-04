@@ -1,0 +1,88 @@
+{
+  "name": "@kmchai/cortico-bot-heart",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cortico bot: Kmch AI · 心 — mood, relationship, persistent memory and source-routed voice decisions",
+  "author": "kmchai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kmch-AI/cortico-bot-heart.git"
+  },
+  "keywords": [
+    "cortico-bot",
+    "cortico",
+    "memory",
+    "mood",
+    "systemone",
+    "voice",
+    "qq",
+    "心",
+    "记忆"
+  ],
+  "engines": {
+    "node": ">=22.23"
+  },
+  "packageManager": "pnpm@11.28.6",
+  "main": "./index.ts",
+  "cortico": {
+    "kind": "bot",
+    "api": 7,
+    "displayName": "Kmch AI · 心",
+    "locales": {
+      "zh": {
+        "displayName": "Kmch AI · 心",
+        "description": "Kmch AI 的 bot 层：心情、关系、持久记忆、按来源路由的语音决策。"
+      },
+      "en": {
+        "displayName": "Kmch AI · Heart",
+        "description": "The bot layer of Kmch AI: mood, relationships, persistent memory and source-routed voice decisions."
+      }
+    },
+    "tags": [
+      "im",
+      "qq",
+      "voice",
+      "memory",
+      "internal-state",
+      "high-cost",
+      "sensitive-data",
+      "external-setup",
+      "experimental"
+    ],
+    "describe": "describe.json",
+    "webUiClient": "dist/webui.js",
+    "webUiStyle": "dist/webui.css"
+  },
+  "files": [
+    "index.ts",
+    "config.ts",
+    "persona",
+    "state",
+    "decision",
+    "memory",
+    "output",
+    "dist/webui.js",
+    "dist/webui.css",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "describe.json"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
+    "build:webui": "node scripts/build-webui.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "cortico": "^0.2.12",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "optionalDependencies": {
+    "sqlite-vec": "0.1.9"
+  }
+}
