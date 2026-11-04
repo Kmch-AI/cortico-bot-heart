@@ -56,7 +56,7 @@ blobs/                mem: 句柄
 ## 已知边界
 
 - 检测 `CoreApi.deliveryDrop`：支持时沉默/暂缓返回 `{ action: 'drop' }`，不写 session、不调主模型；stock Core 上仍是语义沉默，会跑一次主模型。见 `docs/core-drop.md`。
-- 服务插件 0.5.0 已提供 `/v1/systemone`、`/v1/embeddings`、`/v1/rerank`；部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关。服务不可用时仍走降级。
+- 服务插件 0.7.0 已提供 `/v1/systemone`、`/v1/embeddings`、`/v1/rerank`；StartLux 是 `llamacpp` 条目下的模型（`tasks: ['systemone']`），不再单独建 systemone 服务。部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关。服务不可用时仍走降级。
 - 输出 arbiter 已接线：默认 `auto`，只在 `needsArbiter` 或 `output.mode=arbiter` 时 fork 候选；候选只做文本，不执行工具。
 - 显式「记住」即使被 SystemOne skip 也不向用户确认；这是已接受的信任代价。
 

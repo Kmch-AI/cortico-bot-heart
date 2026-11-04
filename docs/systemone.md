@@ -70,10 +70,12 @@
 
 ## 服务侧
 
-服务 0.5.0 已提供：
+服务 0.7.0 已提供：
 
-- `POST /v1/systemone` 原样转发到 Jev 兼容的 `systemone` 条目；
-- `POST /v1/embeddings`、`POST /v1/rerank` 代理到 `llamacpp` 条目；
-- 没有对应条目返回 503；llamacpp 上游不支持 rerank 时返回 501；heart 降级。
+- 条目按模型任务路由：`systemone` / `embeddings` / `rerank` 同级；
+- `POST /v1/systemone` 转发到 `tasks` 含 `systemone` 的条目：外部 Jev 端点直接用，llama.cpp 的 StartLux 走同一条目的伴生 `startlux-decide`；
+- `POST /v1/embeddings`、`POST /v1/rerank` 转发到 `tasks` 含对应任务的条目；
+- 没有对应任务返回 503；llamacpp 上游不支持 rerank 时返回 501；heart 降级；
+- heart 探测 `/health` 的 `services[].tasks`，因此 StartLux 作为 llamacpp 模型仍会被识别为 systemone。
 
 部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关（默认 `http://127.0.0.1:9883`），并让 `decision.tokenSecret` / `vectors.tokenSecret` 与服务网关的令牌变量一致。

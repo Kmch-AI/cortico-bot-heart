@@ -39,23 +39,32 @@ export async function probeService(opts: ServiceProbeOptions): Promise<ServicePr
     }
     const body = await res.json() as {
       services?: Array<{
-        type?: string; id?: string; name?: string;
-        entry?: { type?: string; id?: string; name?: string };
+        type?: string; id?: string; name?: string; tasks?: string[];
+        entry?: { type?: string; id?: string; name?: string; tasks?: string[] };
       }>;
       models?: number | Array<string | { id?: string; name?: string }>;
     };
     const types = new Set((body.services ?? []).map((s) =>
       s.type ?? s.entry?.type ?? s.id ?? s.entry?.id ?? s.name ?? s.entry?.name ?? '',
     ).filter(Boolean));
+    const tasks = new Set((body.services ?? []).flatMap((s) => [
+      ...(Array.isArray(s.tasks) ? s.tasks : []),
+      ...(Array.isArray(s.entry?.tasks) ? s.entry.tasks : []),
+    ]).filter((task): task is string => typeof task === 'string' && task.trim() !== ''));
+    const hasTasks = tasks.size > 0;
     // 服务 /health 的 models 是数量;有些实现会给数组。两种都接受。
     const rawModels = Array.isArray(body.models) ? body.models : [];
     const models = rawModels.map((m) => typeof m === 'string' ? m : m.id ?? m.name ?? '').filter(Boolean);
     return {
       reachable: true,
-      // health 里出现对应条目就认为有路由；真正调用失败仍会走降级。
-      systemone: types.has('systemone'),
-      embeddings: types.has('llamacpp') || types.has('embedding') || models.some((m) => /embed|bge/i.test(m)),
-      rerank: types.has('llamacpp') || types.has('rerank') || models.some((m) => /rerank/i.test(m)),
+      // tasks 是模型级能力；没有 tasks 的旧服务回退到类型/模型名。
+      systemone: tasks.has('systemone') || types.has('systemone'),
+      embeddings: hasTasks
+        ? tasks.has('embeddings')
+        : types.has('llamacpp') || types.has('embedding') || models.some((m) => /embed|bge/i.test(m)),
+      rerank: hasTasks
+        ? tasks.has('rerank')
+        : types.has('llamacpp') || types.has('rerank') || models.some((m) => /rerank/i.test(m)),
       models,
     };
   } catch (err) {

@@ -6,7 +6,7 @@ import { probeService } from '../../decision/probe.ts';
 
 let server: Server | null = null;
 
-async function start(): Promise<string> {
+async function start(health?: unknown): Promise<string> {
   server = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => { body += String(chunk); });
@@ -17,8 +17,8 @@ async function start(): Promise<string> {
         res.end(JSON.stringify(value));
       };
       if (req.url === '/health') {
-        send({
-          status: 'ok', ready: true, version: '0.5.0', uptimeSec: 1,
+        send(health ?? {
+          status: 'ok', ready: true, version: '0.7.0', uptimeSec: 1,
           services: [
             { entry: { type: 'systemone', id: 'jev' }, phase: 'online' },
             { entry: { type: 'llamacpp', id: 'llama' }, phase: 'online' },
@@ -70,6 +70,21 @@ afterEach(async () => {
 });
 
 describe('HTTP service contracts', () => {
+  it('reads systemone from model tasks when StartLux is a llamacpp entry', async () => {
+    const baseUrl = await start({
+      status: 'ok', ready: true, version: '0.7.0', uptimeSec: 1,
+      services: [{
+        entry: { type: 'llamacpp', id: 'startlux', tasks: ['systemone'] },
+        phase: 'online', tasks: ['systemone'],
+      }],
+      models: 1,
+    });
+    const probe = await probeService({ baseUrl, timeoutMs: 1000 });
+    expect(probe).toMatchObject({
+      reachable: true, systemone: true, embeddings: false, rerank: false,
+    });
+  });
+
   it('speaks SystemOne, embeddings and rerank shapes', async () => {
     const baseUrl = await start();
     const client = new SystemOneClient({ baseUrl, model: 'jev', timeoutMs: 1000 });
