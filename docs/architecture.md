@@ -76,7 +76,7 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
 
 - SystemOne 失败：启发式继续；不因决策服务故障而不回复。
 - 记忆失败：本轮不注入记忆；后台重试；绝不因记忆失败而停止对话。
-- SQLite 忙：短 busy timeout + 重试；失败写入 worker 下次再试。
+- SQLite 忙：短 busy timeout；失败的包由 worker 有界重试（最多 3 次），仍失败写 trace，不影响主对话。
 - 语音失败：退回来源渠道文字；不重复合成、不绕过 QQ 确认。
 - 后台 fork 失败/超时：丢弃该包并写 trace；下一次再整理。
 

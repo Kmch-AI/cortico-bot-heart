@@ -13,8 +13,8 @@ import type {
 import type { MemoryCandidate, MemoryRecord, MemoryWriteDecision } from '../memory/types.ts';
 import type { TurnPlanInput } from '../output/turnPlan.ts';
 
-const range = (n: number, label: (i: number) => string): Record<string, string> =>
-  Object.fromEntries(Array.from({ length: n + 1 }, (_, i) => [String(i), label(i)]));
+/** score 的等级描述；Jev 要求最低级在前的数组，不是 legend 映射。 */
+const levels = (...labels: string[]): string[] => labels;
 
 export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
   return {
@@ -58,7 +58,7 @@ export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
     depth: {
       type: 'score',
       instructions: '这句话需要多少认知投入？不等于长度。',
-      legend: range(4, (i) => ['自动反应', '浅层', '一般', '深度', '严谨推理'][i] ?? String(i)),
+      criteria: levels('自动反应', '浅层', '一般', '深度', '严谨推理'),
     },
     length: {
       type: 'choice',
@@ -73,7 +73,7 @@ export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
     playfulness: {
       type: 'score',
       instructions: '玩笑/调侃强度。',
-      legend: range(4, (i) => ['无', '很轻', '适中', '明显', '很强'][i] ?? String(i)),
+      criteria: levels('无', '很轻', '适中', '明显', '很强'),
     },
   };
 }
@@ -100,6 +100,7 @@ export function turnPlanState(input: {
       mentioned: input.input.mentioned,
       voiceAvailable: input.input.voiceAvailable ?? false,
       explicitVoiceRequested: input.input.explicitVoiceRequested ?? false,
+      explicitMemoryRequested: input.input.explicitMemoryRequested ?? false,
     },
   };
 }
@@ -109,16 +110,16 @@ export function appraiseQuestions(): Record<string, SystemOneQuestion> {
     valence: {
       type: 'score',
       instructions: '这件事让我愉悦还是不悦？',
-      legend: range(4, (i) => ['很不悦', '不悦', '中性', '愉悦', '很愉悦'][i] ?? String(i)),
+      criteria: levels('很不悦', '不悦', '中性', '愉悦', '很愉悦'),
     },
-    arousal: { type: 'score', instructions: '激活/激动程度。', legend: range(4, (i) => ['很低', '低', '中', '高', '很高'][i] ?? String(i)) },
-    energy: { type: 'score', instructions: '社交/认知能量变化。', legend: range(4, (i) => ['耗尽', '低', '中', '高', '充沛'][i] ?? String(i)) },
-    tension: { type: 'score', instructions: '紧张/防备程度。', legend: range(4, (i) => ['放松', '轻', '中', '紧', '很紧'][i] ?? String(i)) },
-    importance: { type: 'score', instructions: '这件事对关系/目标有多重要？', legend: range(4, (i) => ['无关', '轻', '中', '重要', '很重要'][i] ?? String(i)) },
+    arousal: { type: 'score', instructions: '激活/激动程度。', criteria: levels('很低', '低', '中', '高', '很高') },
+    energy: { type: 'score', instructions: '社交/认知能量变化。', criteria: levels('耗尽', '低', '中', '高', '充沛') },
+    tension: { type: 'score', instructions: '紧张/防备程度。', criteria: levels('放松', '轻', '中', '紧', '很紧') },
+    importance: { type: 'score', instructions: '这件事对关系/目标有多重要？', criteria: levels('无关', '轻', '中', '重要', '很重要') },
     relationship_delta: {
       type: 'score',
       instructions: '这件事让关系变近还是变远？',
-      legend: range(4, (i) => ['明显变远', '略远', '不变', '略近', '明显变近'][i] ?? String(i)),
+      criteria: levels('明显变远', '略远', '不变', '略近', '明显变近'),
     },
   };
 }
@@ -154,20 +155,14 @@ export function memoryWriteQuestions(
         instructions: '要更新/合并到哪条邻居？没有就选 none/create。',
         criteria: targetCriteria,
       },
-      confidence: { type: 'score', instructions: '候选的可信度。', legend: range(4, (i) => ['猜测', '弱', '中', '强', '确证'][i] ?? String(i)) },
-      salience: { type: 'score', instructions: '这条记忆有多重要？', legend: range(4, (i) => ['可忘', '低', '中', '高', '核心'][i] ?? String(i)) },
+      confidence: { type: 'score', instructions: '候选的可信度。', criteria: levels('猜测', '弱', '中', '强', '确证') },
+      salience: { type: 'score', instructions: '这条记忆有多重要？', criteria: levels('可忘', '低', '中', '高', '核心') },
     },
   };
 }
 
 export function parseAppraisal(answers: Record<string, SystemOneAnswer>): Appraisal {
-  const score = (id: string, fallback: number): number => {
-    const a = answers[id];
-    if (!a || a.type !== 'score') return fallback;
-    const values = Object.keys(a.legend ?? {});
-    const index = values.indexOf(String(a.score));
-    return index >= 0 ? index / Math.max(1, values.length - 1) : fallback;
-  };
+  const score = (id: string, fallback: number): number => scoreValue(answers[id], fallback);
   return {
     valence: score('valence', 0.5) * 2 - 1,
     arousal: score('arousal', 0.5),
@@ -186,11 +181,11 @@ export function parseMemoryWriteDecision(
   const noul = answers.save;
   const save = noul?.type === 'noul' ? noul.noul >= 0.5 : false;
   const opAnswer = answers.op;
-  const opRaw = opAnswer?.type === 'choice' ? opAnswer.choice : save ? 'create' : 'skip';
+  const opRaw = opAnswer?.type === 'choice' && opAnswer.choice ? opAnswer.choice : save ? 'create' : 'skip';
   const op = (['create', 'update', 'merge', 'skip', 'defer'] as const).includes(opRaw as never)
     ? opRaw as MemoryWriteDecision['op'] : 'skip';
   const targetAnswer = answers.target;
-  const target = targetAnswer?.type === 'choice' ? targetAnswer.choice : '';
+  const target = targetAnswer?.type === 'choice' && targetAnswer.choice ? targetAnswer.choice : '';
   const confidence = scoreValue(answers.confidence, 0.6);
   const salience = scoreValue(answers.salience, 0.5);
   return {
@@ -203,11 +198,16 @@ export function parseMemoryWriteDecision(
   };
 }
 
-function scoreValue(answer: SystemOneAnswer | undefined, fallback: number): number {
+/**
+ * score 答案是按等级概率加权的期望值（0..n-1），不是等级 id 字符串。
+ * legend 只用来确定等级数；缺失时按 5 级处理。
+ */
+function scoreValue(answer: SystemOneAnswer | undefined, fallback: number, levelCount = 5): number {
   if (!answer || answer.type !== 'score') return fallback;
-  const values = Object.keys(answer.legend ?? {});
-  const index = values.indexOf(String(answer.score));
-  return index >= 0 ? index / Math.max(1, values.length - 1) : fallback;
+  const raw = typeof answer.score === 'number' ? answer.score : Number(answer.score);
+  if (!Number.isFinite(raw)) return fallback;
+  const levels = Object.keys(answer.legend ?? {}).length || levelCount;
+  return Math.max(0, Math.min(1, raw / Math.max(1, levels - 1)));
 }
 
 export function rerankQuestions(candidates: readonly RerankCandidate[]): { questions: Record<string, SystemOneQuestion>; byQuestion: Map<string, string> } {

@@ -4,9 +4,13 @@
 
 按顺序：
 
-1. `persona/PREFIX.md`：身份摘要、表达目标、说话方式、记忆是数据、工具与交付路由、World 环境。
-2. `persona/BEHAVIOR.md`：交际行为原则。
-3. `persona/MEMORY_PROTOCOL.md`：记忆读写协议、隐私、冲突处理。
+1. `PREFIX.md`：身份摘要、表达目标、说话方式、记忆是数据、工具与交付路由、World 环境。
+2. `BEHAVIOR.md`：交际行为原则。
+3. `MEMORY_PROTOCOL.md`：记忆读写协议、隐私、冲突处理。
+
+每份文件先读部署覆盖 `<部署根>/prompts/<名字>`，不存在才回落到包内 `persona/<名字>`。
+包内模板只读；WebUI 的提示词页保存到部署覆盖，不会改 pnpm store。
+保存后 Core 不会自动重建前缀，需要在会话页执行一次「重载前缀」（或等下一次上下文交接）。
 
 变量：
 

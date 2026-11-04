@@ -1,8 +1,9 @@
-import { resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CoreApi, EventEnvelope, ToolDef, World } from 'cortico/core/types.ts';
 import type { SessionInfo } from 'cortico/core/types.ts';
-import { HeartPersona } from '../../persona/persona.ts';
+import { HeartPersona, isExplicitMemoryRequest } from '../../persona/persona.ts';
 import { testConfig, tempDir } from '../helpers.ts';
 
 const PACKAGE_DIR = resolve(import.meta.dirname, '../..');
@@ -93,6 +94,7 @@ function makePersona(
   const persona = new HeartPersona({
     memoryDir: tmp.dir,
     packageDir: PACKAGE_DIR,
+    promptDir: join(tmp.dir, 'prompts'),
     worlds,
     config: () => cfg,
     secret: () => '',
@@ -140,7 +142,7 @@ describe('HeartPersona integration', () => {
   });
 
   it('keeps semantic silence when silence.mode is semantic even if Core can drop', async () => {
-    const { persona, core } = makePersona({ silence: { mode: 'semantic', threshold: 0.5 } }, undefined, true);
+    const { persona, core } = makePersona({ silence: { mode: 'semantic' } }, undefined, true);
     const decision = await persona.onDelivery({
       events: [event({ meta: { conv: { kind: 'group', id: 9 } }, text: '今天天气不错' })],
     });
@@ -151,7 +153,7 @@ describe('HeartPersona integration', () => {
   });
 
   it('falls back to semantic silence when core-drop is configured on stock Core', async () => {
-    const { persona, core } = makePersona({ silence: { mode: 'core-drop', threshold: 0.5 } });
+    const { persona, core } = makePersona({ silence: { mode: 'core-drop' } });
     const decision = await persona.onDelivery({
       events: [event({ meta: { conv: { kind: 'group', id: 9 } }, text: '今天天气不错' })],
     });
@@ -173,7 +175,7 @@ describe('HeartPersona integration', () => {
     persona.shutdown();
   });
 
-  it('runs the memory worker asynchronously and injects a short receipt', async () => {
+  it('runs the memory worker asynchronously without waking the main session', async () => {
     const { persona, core } = makePersona({}, async (opts: any) => {
       const propose = opts.tools.find((t: any) => t.name === 'memory_propose');
       await propose.handler({
@@ -196,7 +198,40 @@ describe('HeartPersona integration', () => {
     // 钩子已返回；后台 worker 继续跑。
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(persona.store.stats().active).toBe(1);
-    expect(core.deferred.some((t) => t.includes('新增 1 条'))).toBe(true);
+    // 自主记忆保持静默：不向主会话注入任何回执。
+    expect(core.deferred).toHaveLength(0);
+    expect(core.injected).toHaveLength(0);
+    persona.shutdown();
+  });
+
+  it('detects explicit memory requests and keeps them replying', () => {
+    expect(isExplicitMemoryRequest('记住我叫空空')).toBe(true);
+    expect(isExplicitMemoryRequest('再记一下我的名字')).toBe(true);
+    expect(isExplicitMemoryRequest('remember my name is Kong')).toBe(true);
+    expect(isExplicitMemoryRequest('今天天气不错')).toBe(false);
+    expect(isExplicitMemoryRequest('没记住就算了')).toBe(false);
+    expect(isExplicitMemoryRequest('你记得吗')).toBe(false);
+  });
+
+  it('treats a user_id-only event as a private conversation', async () => {
+    const { persona } = makePersona();
+    await persona.onDelivery({ events: [event({ meta: { user_id: '10086' }, text: '在么' })] });
+    const head = JSON.stringify(persona.sessionHead());
+    expect(head).toContain('private:10086');
+    expect(head).toContain('回应');
+    persona.onBatchEnd();
+    persona.shutdown();
+  });
+
+  it('reads deployment prompt overrides before package templates', async () => {
+    const { persona, dir } = makePersona();
+    const prompts = join(dir, 'prompts');
+    mkdirSync(prompts, { recursive: true });
+    writeFileSync(join(prompts, 'PREFIX.md'), '# Override\n\n{{persona.displayName}} 的部署前缀。', 'utf8');
+    const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
+    const prefix = segments.find((s) => s.title === 'PREFIX');
+    expect(prefix?.text).toContain('部署前缀');
+    expect(prefix?.text).not.toContain('先问「我想说什么」');
     persona.shutdown();
   });
 

@@ -23,6 +23,8 @@ export interface MemoryPacket {
   explicit?: boolean;
   candidate?: import('./types.ts').MemoryCandidate;
   priority: number;
+  /** 失败重试次数；只对非显式候选包生效。 */
+  attempts?: number;
 }
 
 export interface MemoryWorkerOptions {
@@ -33,6 +35,8 @@ export interface MemoryWorkerOptions {
   queueLimit: number;
   timeoutMs: number;
   warmLimit: number;
+  /** bot 自己的名字/自称；区分核心身份与关于他人的事实。 */
+  selfNames?: readonly string[];
   logger?: { warn: (msg: string, data?: unknown) => void; info: (msg: string, data?: unknown) => void };
   onTrace?: (event: { task: string; detail: string }) => void;
 }
@@ -41,8 +45,13 @@ const KINDS: readonly MemoryKind[] = ['identity', 'relationship', 'preference', 
 const SCOPES: readonly MemoryScope['type'][] = ['global', 'person', 'group', 'thread'];
 const SENSITIVITY: readonly MemorySensitivity[] = ['normal', 'private', 'secret'];
 
+const MAX_ATTEMPTS = 3;
+const DUPLICATE_WINDOW_MS = 10 * 60_000;
+
 export class MemoryWorker {
   private readonly queue: MemoryPacket[] = [];
+  private readonly recentKeys = new Map<string, number>();
+  private readonly retryTimers = new Set<ReturnType<typeof setTimeout>>();
   private running = false;
   private stopped = false;
 
@@ -60,10 +69,38 @@ export class MemoryWorker {
   stop(): void {
     this.stopped = true;
     this.queue.length = 0;
+    for (const timer of this.retryTimers) clearTimeout(timer);
+    this.retryTimers.clear();
+  }
+
+  private writeOptions() {
+    return {
+      store: this.opts.store,
+      decision: this.opts.decision,
+      embedding: this.opts.embedding,
+      warmLimit: this.opts.warmLimit,
+      selfNames: this.opts.selfNames,
+    };
   }
 
   enqueue(packet: MemoryPacket): void {
     if (this.stopped) return;
+    const key = packetKey(packet);
+    if (key) {
+      const now = Date.now();
+      const last = this.recentKeys.get(key);
+      if (last !== undefined && now - last < DUPLICATE_WINDOW_MS) {
+        this.opts.onTrace?.({ task: 'memory.worker', detail: `duplicate packet ${packet.id}` });
+        return;
+      }
+      this.recentKeys.set(key, now);
+      if (this.recentKeys.size > 256) {
+        for (const [oldKey, at] of this.recentKeys) {
+          if (now - at >= DUPLICATE_WINDOW_MS || this.recentKeys.size > 256) this.recentKeys.delete(oldKey);
+          if (this.recentKeys.size <= 200) break;
+        }
+      }
+    }
     if (this.queue.length >= this.opts.queueLimit) {
       let minIndex = 0;
       for (let i = 1; i < this.queue.length; i++) {
@@ -101,8 +138,22 @@ export class MemoryWorker {
         try {
           await this.process(packet);
         } catch (err) {
-          this.opts.logger?.warn(`记忆包处理失败 ${packet.id}`, { error: (err as Error)?.message ?? String(err) });
-          this.opts.onTrace?.({ task: 'memory.worker', detail: `failed ${packet.id}: ${(err as Error)?.message ?? err}` });
+          const attempts = (packet.attempts ?? 0) + 1;
+          const error = (err as Error)?.message ?? String(err);
+          if (attempts <= MAX_ATTEMPTS && !this.stopped) {
+            this.opts.logger?.warn(`记忆包处理失败，重试 ${attempts}/${MAX_ATTEMPTS} ${packet.id}`, { error });
+            const timer = setTimeout(() => {
+              this.retryTimers.delete(timer);
+              if (this.stopped) return;
+              this.queue.push({ ...packet, attempts });
+              void this.drain();
+            }, 500 * attempts);
+            timer.unref?.();
+            this.retryTimers.add(timer);
+          } else {
+            this.opts.logger?.warn(`记忆包处理失败，已丢弃 ${packet.id}`, { error });
+            this.opts.onTrace?.({ task: 'memory.worker', detail: `failed ${packet.id}: ${error}` });
+          }
         }
       }
     } finally {
@@ -113,12 +164,7 @@ export class MemoryWorker {
   private async process(packet: MemoryPacket): Promise<void> {
     if (this.stopped) return;
     if (packet.candidate) {
-      const result = await writeCandidate(packet.candidate, {
-        store: this.opts.store,
-        decision: this.opts.decision,
-        embedding: this.opts.embedding,
-        warmLimit: this.opts.warmLimit,
-      });
+      const result = await writeCandidate(packet.candidate, this.writeOptions());
       this.report(packet, summaryOf(result.applied));
       return;
     }
@@ -130,6 +176,7 @@ export class MemoryWorker {
     const propose = this.proposeTool(staged, packet);
     const messages = buildMessages(packet);
     let text = '';
+    // hidden 是 Core 的隐藏 fork 能力（新增）；旧 Core 忽略这个字段，只是会多一个 session 窗口。
     const fork = core.spawnFork({
       id: 'memory',
       messages,
@@ -137,12 +184,13 @@ export class MemoryWorker {
       stopWhen: () => staged.length > 0,
       wrapUpHint: '收线：没整理完的部分丢弃，不要编造；只提交有证据的候选。',
       capNote: '记忆提取达到轮数上限，未提交的部分丢弃。',
-    });
+      hidden: true,
+    } as Parameters<CoreApi['spawnFork']>[0]);
     text = await withTimeout(fork, this.opts.timeoutMs, '');
 
     // 模型没走工具时，尝试从正文里读结构化 JSON；仍然要经过同一套校验。
     if (staged.length === 0 && text.trim()) {
-      staged.push(...parseProposalText(text));
+      staged.push(...parseProposalText(text, packet));
     }
     if (staged.length === 0) {
       this.opts.onTrace?.({ task: 'memory.worker', detail: `no proposal ${packet.id}` });
@@ -153,12 +201,7 @@ export class MemoryWorker {
     let updated = 0;
     for (const op of staged) {
       if (op.candidate && op.op !== 'skip' && op.op !== 'defer') {
-        const result = await writeCandidate(op.candidate, {
-          store: this.opts.store,
-          decision: this.opts.decision,
-          embedding: this.opts.embedding,
-          warmLimit: this.opts.warmLimit,
-        });
+        const result = await writeCandidate(op.candidate, this.writeOptions());
         created += result.applied.created.length;
         updated += result.applied.updated.length + result.applied.merged.length;
       } else {
@@ -170,22 +213,22 @@ export class MemoryWorker {
     else this.opts.onTrace?.({ task: 'memory.worker', detail: `no durable change ${packet.id}` });
   }
 
+  /**
+   * 记忆写入不向主会话回注任何文本。
+   *
+   * Core 会把内部事件渲染成 user 消息；一条“记忆已整理”会唤醒主模型，模型可能把它当成
+   * 用户发言而多回一句，也会污染历史。显式“记住”的回复由主模型在当回合完成；
+   * 自主写入只留 trace 与 Memory 页，保持真正静默。
+   */
   private report(packet: MemoryPacket, summary: string): void {
     if (!summary) return;
-    const core = this.opts.core();
-    if (!core) return;
-    try {
-      core.injectDeferred('memory.result', () => summary);
-    } catch (err) {
-      this.opts.logger?.warn('记忆回执注入失败', { error: (err as Error)?.message ?? String(err) });
-    }
     this.opts.onTrace?.({ task: 'memory.worker', detail: `${packet.id}: ${summary}` });
   }
 
   private proposeTool(staged: MemoryOp[], packet: MemoryPacket): ToolDef {
     return {
       name: 'memory_propose',
-      description: 'Submit structured memory operations extracted from this batch. Only durable, evidence-backed items. Do not submit small talk, guesses, secrets, or third-party sensitive data.',
+      description: 'Submit structured memory operations extracted from this batch. Only durable, evidence-backed items. identity is only this bot\'s own core self-definition; facts about a user or other people are semantic/relationship with subject set. Do not submit small talk, guesses, secrets, or third-party sensitive data.',
       tags: ['write'],
       parameters: {
         type: 'object',
@@ -232,12 +275,40 @@ export class MemoryWorker {
   }
 }
 
+/** 同一批事件 + 同一段助手输出只提取一次；handoff 与批末重复入队时省掉一次 fork。 */
+function packetKey(packet: MemoryPacket): string {
+  if (packet.candidate) return '';
+  const events = packet.events
+    .map((e) => `${e.cursor ?? ''}|${e.ts}|${e.source}|${e.text.slice(0, 120)}`)
+    .join(';');
+  const assistant = (packet.assistant ?? '').slice(0, 200);
+  return events || assistant ? `${events}::${assistant}` : '';
+}
+
+/** 提取提示词的正文预算；超出时保留最近的事件，避免 fork 请求撞上下文上限。 */
+const EXTRACT_EVENT_BUDGET = 12_000;
+
+function recentEventLines(packet: MemoryPacket): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const e of packet.events.slice(-40).reverse()) {
+    const line = `[${e.ts}] ${e.source}/${e.type}: ${e.text}`;
+    if (used + line.length > EXTRACT_EVENT_BUDGET) break;
+    lines.unshift(line);
+    used += line.length;
+  }
+  return lines.join('\n');
+}
+
 function buildMessages(packet: MemoryPacket): ContextRecord[] {
-  const eventLines = packet.events.map((e) => `[${e.ts}] ${e.source}/${e.type}: ${e.text}`).join('\n');
+  const eventLines = recentEventLines(packet);
   const text = [
     '你是记忆提取器。只输出结构化提案，不写正文。',
-    '规则：只提取耐久的偏好、关系变化、承诺、重要事件、纠正、身份相关、长期目标、重复模式。',
+    '规则：只提取耐久的偏好、关系变化、承诺、重要事件、纠正、长期目标、重复模式。',
     '不保存寒暄、一次性情绪、无证据猜测、第三方敏感信息、密钥、完整聊天记录。',
+    'kind：identity 只用于你自己的核心身份（你的名字、自称、价值观、边界、对自己的叙事）。'
+      + '关于用户或其他人的姓名、资料、偏好用 semantic，关系变化用 relationship，并在 subject 写那个人；'
+      + '不要把“用户叫什么”写成 identity。',
     '每个候选必须有证据（event id 或短引用）。没有证据只能 defer。',
     '用户明确说“记住”时，candidate.explicit=true；即使你建议 skip 也要提交，让上层留审计。',
     '',
@@ -323,13 +394,13 @@ function normalizeCandidate(c: Record<string, unknown>, packet: MemoryPacket): i
   };
 }
 
-function parseProposalText(text: string): MemoryOp[] {
+function parseProposalText(text: string, packet: MemoryPacket): MemoryOp[] {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return [];
   try {
     const parsed = JSON.parse(text.slice(start, end + 1)) as { ops?: unknown[] };
-    const packet: MemoryPacket = { id: 'text', at: new Date().toISOString(), events: [], priority: 0 };
+    // 沿用原包的 scope / source / explicit；否则群聊私事会丢掉 private 降级。
     return (parsed.ops ?? []).map((raw) => normalizeOp(raw, packet)).filter((x): x is MemoryOp => !!x);
   } catch {
     return [];

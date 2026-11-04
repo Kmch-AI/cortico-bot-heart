@@ -21,19 +21,23 @@ function response(answers: Record<string, unknown>): Response {
 
 describe('SystemOne client and decision plane', () => {
   it('parses typed answers into a turn plan', async () => {
-    const fetch = async (): Promise<Response> => response({
-      action: { type: 'choice', choice: 'respond', confidence: 0.82, probabilities: { respond: 0.82, silence: 0.1, defer: 0.08 } },
-      addressed: { type: 'noul', noul: 0.9 },
-      voice: { type: 'noul', noul: 0.7 },
-      needs_arbiter: { type: 'noul', noul: 0.2 },
-      intent: { type: 'choice', choice: 'acknowledge', confidence: 0.7, probabilities: {} },
-      stance: { type: 'choice', choice: 'neutral', confidence: 0.6, probabilities: {} },
-      depth: { type: 'score', score: '2', confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
-      length: { type: 'choice', choice: 'short', confidence: 0.7, probabilities: {} },
-      directness: { type: 'choice', choice: 'neutral', confidence: 0.7, probabilities: {} },
-      playfulness: { type: 'score', score: '1', confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
-    });
-    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    let sent: { questions?: Record<string, { criteria?: unknown; legend?: unknown }> } | undefined;
+    const fakeFetch: typeof globalThis.fetch = async (_input, init) => {
+      sent = JSON.parse(String(init?.body ?? '{}'));
+      return response({
+        action: { type: 'choice', choice: 'respond', confidence: 0.82, probabilities: { respond: 0.82, silence: 0.1, defer: 0.08 } },
+        addressed: { type: 'noul', noul: 0.9 },
+        voice: { type: 'noul', noul: 0.7 },
+        needs_arbiter: { type: 'noul', noul: 0.2 },
+        intent: { type: 'choice', choice: 'acknowledge', confidence: 0.7, probabilities: {} },
+        stance: { type: 'choice', choice: 'neutral', confidence: 0.6, probabilities: {} },
+        depth: { type: 'score', score: 2, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+        length: { type: 'choice', choice: 'short', confidence: 0.7, probabilities: {} },
+        directness: { type: 'choice', choice: 'neutral', confidence: 0.7, probabilities: {} },
+        playfulness: { type: 'score', score: 1, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+      });
+    };
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch: fakeFetch });
     const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
     const { plan } = await plane.plan(input, { events: 'hi' });
     expect(plan.action).toBe('respond');
@@ -42,6 +46,41 @@ describe('SystemOne client and decision plane', () => {
     expect(plan.cognitiveDepth).toBe('L2');
     expect(plan.length).toBe('short');
     expect(plan.confidence).toBeCloseTo(0.82, 2);
+    // score 问题必须发 criteria 数组；legend 是旧格式，会被上游 422。
+    expect(sent?.questions?.depth?.criteria).toEqual(['自动反应', '浅层', '一般', '深度', '严谨推理']);
+    expect(sent?.questions?.depth?.legend).toBeUndefined();
+  });
+
+  it('maps a fractional expected score to the nearest level', async () => {
+    const fetch = async (): Promise<Response> => response({
+      action: { type: 'choice', choice: 'respond', confidence: 0.8, probabilities: {} },
+      addressed: { type: 'noul', noul: 0.9 },
+      voice: { type: 'noul', noul: 0.1 },
+      needs_arbiter: { type: 'noul', noul: 0.1 },
+      intent: { type: 'choice', choice: 'acknowledge', confidence: 0.7, probabilities: {} },
+      stance: { type: 'choice', choice: 'neutral', confidence: 0.6, probabilities: {} },
+      depth: { type: 'score', score: 2.6, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+      length: { type: 'choice', choice: 'short', confidence: 0.7, probabilities: {} },
+      directness: { type: 'choice', choice: 'neutral', confidence: 0.7, probabilities: {} },
+      playfulness: { type: 'score', score: 2, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+    });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const { plan } = await plane.plan(input, {});
+    expect(plan.cognitiveDepth).toBe('L3');
+    expect(plan.playfulness).toBeCloseTo(0.5, 2);
+  });
+
+  it('accepts a null choice as abstention instead of rejecting the response', async () => {
+    const fetch = async (): Promise<Response> => response({
+      action: { type: 'choice', choice: null, confidence: 0.9, probabilities: {}, none_probability: 0.7 },
+      addressed: { type: 'noul', noul: 0.9 },
+    });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const { plan, trace } = await plane.plan(input, {});
+    expect(trace.mode).toBe('systemone');
+    expect(plan.action).toBe('respond');
   });
 
   it('falls back to heuristic on timeout and does not throw', async () => {

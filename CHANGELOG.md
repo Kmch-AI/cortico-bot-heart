@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+- 修复 SystemOne `score` 请求格式：改用最低级在前的 `criteria` 数组，不再发 `legend`；修复上游 422 导致 turn plan / appraisal / memory_write 全部降级。
+- 修复 `score` 答案解析：按数值期望等级（0..n-1）取整，不再拿 `legend` 键反查。
+- 修复记忆写不进：用户姓名等“关于某人的事实”不再被当成核心身份卡进待审队列；只有 bot 自己的全局自述进入 `identity:pending`。
+- 显式「记住」覆盖 SystemOne 的 skip/defer（精确重复仍去重），并保证当回合回复；自主记忆保持静默。
+- 移除 `memory.result` 回注：它会被 Core 渲染成 user 消息、唤醒主模型并污染历史；写入结果只留 trace 与 Memory 页。
+- 记忆 fork 传 `hidden: true`；支持隐藏 fork 的 Core 不再为每次记忆多开 session 窗口（旧 Core 忽略该字段）。
+- PREFIX / BEHAVIOR / MEMORY_PROTOCOL 支持部署覆盖：WebUI 保存到 `<部署根>/prompts/`，运行时优先读覆盖；包内模板保持只读。
+- Memory 页新增「待审核心身份」，可批准或拒绝；修复 `identity:pending` 无入口的问题。
+- 修复巩固定时器重复累积：接管时清理旧的 `consolidate` 定时器，并只保留一个待触发条目。
+- 修正 `docs/systemone.md` 的 wire format、`docs/async-memory.md` 的回注说明与 `docs/memory.md` 的身份边界。
+
 ## 0.1.1
 
 - 扩展介绍统一为中文的「定位 + 能力 + 边界」格式；npm `description`、市场中文介绍与 README 首段同步；英文市场介绍同步为同一格式的英文镜像。

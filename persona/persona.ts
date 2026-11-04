@@ -38,6 +38,7 @@ import { consolidate } from '../memory/consolidate.ts';
 import { EmbeddingService, HttpEmbeddingService, HttpRerankService, RerankService } from '../memory/vectors.ts';
 import { DecisionPlane, type DecisionTrace } from '../decision/fallback.ts';
 import { SystemOneClient } from '../decision/systemone.ts';
+import { turnPlanState } from '../decision/questions.ts';
 import { probeService } from '../decision/probe.ts';
 import { MoodEngine } from '../state/mood.ts';
 import { RelationshipEngine } from '../state/relationship.ts';
@@ -57,6 +58,8 @@ const ARBITER = 'arbiter';
 export interface HeartPersonaOptions {
   memoryDir: string;
   packageDir: string;
+  /** 部署侧的提示词覆盖目录（<部署根>/prompts）；文件不存在时回落到包内模板。 */
+  promptDir: string;
   worlds: readonly World[];
   config: () => HeartConfig;
   secret: (name: string) => string;
@@ -109,11 +112,14 @@ export class HeartPersona implements Persona {
   private lastScope: MemoryScope = { type: 'global' };
   private lastMemoryCards: MemoryCard[] = [];
   private lastTrace: DecisionTrace | null = null;
+  /** 本批用户是否明确要求记住；memory_note 与后台提取据此标 explicit。 */
+  private explicitMemoryRequested = false;
   private turns = 0;
   private lastVoiceTurn: number | null = null;
   private lastConsolidation = 0;
   private shutdownDone = false;
   private clientKey = '';
+  private consolidationTimerId: string | null = null;
   /** core-drop 模式遇到不支持 drop 的 Core 只告警一次。 */
   private dropUnsupportedWarned = false;
 
@@ -140,10 +146,15 @@ export class HeartPersona implements Persona {
     this.initStores();
     core.timers.onDue((entry) => {
       if (entry.payload?.kind === 'consolidate') {
+        this.consolidationTimerId = null;
         this.runConsolidation();
         this.scheduleConsolidation();
       }
     });
+    // 上一进程留下的同类定时器会重复触发；接管时先清掉。
+    for (const timer of core.timers.list()) {
+      if (timer.payload?.kind === 'consolidate') core.timers.cancel(timer.id);
+    }
     this.scheduleConsolidation();
     core.log.info('heart attached', {
       memoryDir: this.memoryDir,
@@ -157,6 +168,10 @@ export class HeartPersona implements Persona {
   shutdown(): void {
     if (this.shutdownDone || !this.store) return;
     this.shutdownDone = true;
+    if (this.consolidationTimerId && this.core) {
+      this.core.timers.cancel(this.consolidationTimerId);
+      this.consolidationTimerId = null;
+    }
     this.worker.stop();
     this.store.close();
   }
@@ -191,6 +206,7 @@ export class HeartPersona implements Persona {
       queueLimit: cfg.worker.queueLimit,
       timeoutMs: cfg.worker.timeoutMs,
       warmLimit: cfg.memory.warmLimit,
+      selfNames: this.selfNames(),
       logger: this.opts.logger,
       onTrace: (event) => this.trace({ task: event.task, at: new Date().toISOString(), mode: 'systemone', latencyMs: 0, summary: event.detail }),
     });
@@ -209,8 +225,9 @@ export class HeartPersona implements Persona {
       .filter((w) => w.envPrompt.trim())
       .map((w) => `## ${w.id}\n${w.envPrompt.trim()}`)
       .join('\n\n');
+    // 部署覆盖优先；包内模板只读，WebUI 保存写到 <部署根>/prompts。
     const read = (name: string): string => {
-      const path = join(this.opts.packageDir, 'persona', name);
+      const path = this.promptSource(name);
       return existsSync(path) ? readTextFile(path) : '';
     };
     const vars = {
@@ -299,6 +316,7 @@ export class HeartPersona implements Persona {
         onNote: (candidate) => this.worker.enqueueExplicit(candidate, this.lastScope, this.lastDelivery?.source),
         allowForget: false,
         currentScope: () => this.lastScope,
+        explicitRequest: () => this.explicitMemoryRequested,
       }),
       endTurnTool(),
     ];
@@ -317,15 +335,17 @@ export class HeartPersona implements Persona {
     this.refreshClients();
     const incoming = ctx.events.filter(isIncoming);
     if (incoming.length === 0) {
-      // 内部通知（记忆回执、交接提示）不产生新的 turn plan；避免把上一批的计划当成这一批的。
+      // 内部通知（交接提示等）不产生新的 turn plan；避免把上一批的计划当成这一批的。
       this.lastPlan = null;
       this.lastDelivery = null;
       this.lastMemoryCards = [];
+      this.explicitMemoryRequested = false;
       return;
     }
     const cfg = this.opts.config();
     const last = incoming[incoming.length - 1]!;
     const text = incoming.map((e) => e.text).join('\n').slice(0, 4000);
+    this.explicitMemoryRequested = isExplicitMemoryRequest(text);
 
     for (const event of incoming) {
       this.pendingEvents.push({
@@ -363,9 +383,10 @@ export class HeartPersona implements Persona {
       recentAssistantCount: this.recentAssistantCount(),
       voiceAvailable: route.voiceAvailable,
       explicitVoiceRequested: isExplicitVoiceRequest(text, cfg.voice.explicitKeywords),
+      explicitMemoryRequested: this.explicitMemoryRequested,
     };
-    const state = {
-      events: text,
+    const state = turnPlanState({
+      eventSummary: text,
       recent: this.recentText(),
       mood: {
         valence: mood.valence, arousal: mood.arousal, energy: mood.energy,
@@ -378,14 +399,8 @@ export class HeartPersona implements Persona {
       },
       hot: this.store.hot(6).map((r) => `${r.title}: ${r.content}`),
       delivery: formatDeliveryPlan(route),
-      flags: {
-        addressed: input.addressed,
-        private: input.isPrivate,
-        mentioned: input.mentioned,
-        voiceAvailable: route.voiceAvailable,
-        explicitVoiceRequested: input.explicitVoiceRequested,
-      },
-    };
+      input,
+    });
 
     const [decided, appraisal] = await Promise.all([
       this.decision.plan(input, state),
@@ -406,6 +421,13 @@ export class HeartPersona implements Persona {
       });
     }
 
+    // 用户明确要求记住时，当回合必须有一句回复；自主记忆仍然可以沉默。
+    if (plan.action !== 'respond' && route.text !== 'none'
+      && (input.addressed || input.isPrivate) && input.explicitMemoryRequested) {
+      plan.action = 'respond';
+      plan.reason += '; explicit_memory_request';
+    }
+
     if (plan.action === 'respond' && route.text === 'none') {
       plan.action = 'silence';
       plan.reason += '; text_unsupported';
@@ -424,8 +446,9 @@ export class HeartPersona implements Persona {
     if (!gate.send) {
       plan.voice = false;
       plan.reason += `; voice: ${gate.reason}`;
-    } else {
-      this.lastVoiceTurn = this.turns;
+    } else if (plan.action !== 'respond') {
+      // 沉默/暂缓批次不会真的发语音，不能消耗冷却。
+      plan.voice = false;
     }
 
     this.lastPlan = plan;
@@ -531,12 +554,16 @@ ${chosen.text}`, 'arbiter');
   }
 
   onTurnEnded(): void {
-    if (this.lastPlan?.voice && !this.calledTools.has('voice_speak')) {
-      this.trace({
-        task: 'voice_miss', at: new Date().toISOString(), mode: 'skipped', latencyMs: 0,
-        summary: `plan wanted voice, tools=${[...this.calledTools].join(',') || 'none'}`,
-      });
+    if (!this.lastPlan?.voice) return;
+    if (this.calledTools.has('voice_speak')) {
+      // 只有真的调用过语音工具才进入冷却。
+      this.lastVoiceTurn = this.turns;
+      return;
     }
+    this.trace({
+      task: 'voice_miss', at: new Date().toISOString(), mode: 'skipped', latencyMs: 0,
+      summary: `plan wanted voice, tools=${[...this.calledTools].join(',') || 'none'}`,
+    });
   }
 
   onIdle(): void {
@@ -559,22 +586,10 @@ ${chosen.text}`, 'arbiter');
     this.opts.logger?.info(`world ${event.kind}: ${event.id}`, event.reason ? { reason: event.reason } : undefined);
   }
 
-  async onHandoff(snapshot: ContextRecord[]): Promise<{ tail: ContextRecord[] | null }> {
+  async onHandoff(_snapshot: ContextRecord[]): Promise<{ tail: ContextRecord[] | null }> {
     this.initStores();
     this.flushPacket();
-    const recent = snapshot.filter((r) => r.item.type === 'message').slice(-12);
-    const assistant = recent.filter((r) => r.item.type === 'message' && r.item.role === 'assistant').map((r) => itemText(r.item)).join('\n').trim();
-    if (assistant) {
-      this.worker.enqueue({
-        id: `packet_${Date.now()}`,
-        at: new Date().toISOString(),
-        events: [],
-        assistant,
-        scope: this.lastScope,
-        source: this.lastDelivery?.source,
-        priority: 80,
-      });
-    }
+    // 助手正文已由 onBatchEnd / 本次 flushPacket 入队；不要再从快照重复提取同一段。
     const mood = this.mood.current();
     const threads = this.attention.current().threads.filter((t) => t.status !== 'closed').slice(0, 2).map((t) => t.title);
     this.core?.injectInternal(
@@ -624,6 +639,34 @@ ${chosen.text}`, 'arbiter');
       panels: [
         { id: 'heart', title: zh ? '心' : 'Heart', getMethods: ['status', 'memories'] },
         { id: 'service', title: zh ? '服务' : 'Service', getMethods: ['probe'] },
+      ],
+      promptDocs: [
+        {
+          key: 'persona.prefix',
+          title: 'PREFIX',
+          description: zh ? '稳定人格前缀：身份、表达目标、工具路由。' : 'Stable persona prefix: identity, expressive goals, tool routing.',
+          path: this.promptSource('PREFIX.md'),
+          deploymentPath: join(this.opts.promptDir, 'PREFIX.md'),
+          vars: [
+            { name: 'persona.identity', description: zh ? 'identity 记录摘要；没有记录时用默认自述。' : 'Identity record summary, or the default self-description.', multiline: true },
+            { name: 'persona.displayName', description: zh ? '当前显示名。' : 'Current display name.' },
+            { name: 'worlds.envPrompts', description: zh ? '已挂载 World 的环境提示词。' : 'Environment prompts of mounted Worlds.', multiline: true },
+          ],
+        },
+        {
+          key: 'persona.behavior',
+          title: 'BEHAVIOR',
+          description: zh ? '交际行为与表达原则。' : 'Conversational behavior and expression principles.',
+          path: this.promptSource('BEHAVIOR.md'),
+          deploymentPath: join(this.opts.promptDir, 'BEHAVIOR.md'),
+        },
+        {
+          key: 'persona.memoryProtocol',
+          title: 'MEMORY_PROTOCOL',
+          description: zh ? '记忆读写、隐私与冲突处理协议。' : 'Memory read/write, privacy and conflict protocol.',
+          path: this.promptSource('MEMORY_PROTOCOL.md'),
+          deploymentPath: join(this.opts.promptDir, 'MEMORY_PROTOCOL.md'),
+        },
       ],
       memory: {
         panels: [
@@ -765,6 +808,19 @@ ${chosen.text}`, 'arbiter');
     return this.listFiles(sub).length;
   }
 
+  /** 当前读取的提示词源：部署覆盖存在就用它，否则用包内模板。 */
+  private promptSource(name: string): string {
+    const override = join(this.opts.promptDir, name);
+    return existsSync(override) ? override : join(this.opts.packageDir, 'persona', name);
+  }
+
+  /** bot 自己的名字/自称；用于把“用户叫什么”从核心身份里分出来。 */
+  private selfNames(): string[] {
+    const name = this.opts.config().identity.displayName.trim();
+    const short = name.split('·').pop()?.trim() ?? '';
+    return [name, short, 'heart', '心'].filter((n, i, all) => n.length > 0 && all.indexOf(n) === i);
+  }
+
   private identityText(): string {
     if (!this.store) return `我是 ${this.opts.config().identity.displayName}。`;
     const records = this.store.list({ kinds: ['identity'], status: ['active'], limit: 8, orderBy: 'salience' });
@@ -795,6 +851,7 @@ ${chosen.text}`, 'arbiter');
       assistant: this.assistantBuffer.trim(),
       scope: this.lastScope,
       source: this.lastDelivery?.source,
+      explicit: this.explicitMemoryRequested,
       priority: this.lastPlan?.action === 'respond' ? 60 : 40,
     };
     this.assistantBuffer = '';
@@ -805,9 +862,11 @@ ${chosen.text}`, 'arbiter');
   private scheduleConsolidation(): void {
     const core = this.core;
     if (!core) return;
+    if (this.consolidationTimerId) core.timers.cancel(this.consolidationTimerId);
     const cfg = this.opts.config();
     const at = new Date(Date.now() + Math.max(1, cfg.consolidation.idleMinutes) * 60_000).toISOString();
-    core.timers.set(at, { kind: 'consolidate' });
+    const result = core.timers.set(at, { kind: 'consolidate' });
+    this.consolidationTimerId = result.ok ? result.id : null;
   }
 
   private runConsolidation(): void {
@@ -908,6 +967,14 @@ export function endTurnTool(): ToolDef {
   return { ...END_TURN_DECL, handler: async () => '[turn ended]' };
 }
 
+// “没记住/不记住”是回忆或否定，不是要求；单列“别忘了”避免被否定前缀吃掉。
+const EXPLICIT_MEMORY_REQUEST = /(?<![没不])记住|(?<![没不])记一下|(?<![没不])记下|别忘了|别忘记|remember|don'?t forget|do not forget/i;
+
+/** 用户是否在明确要求保存记忆；这类回合必须回复，不能因为决策层沉默而吞掉。 */
+export function isExplicitMemoryRequest(text: string): boolean {
+  return EXPLICIT_MEMORY_REQUEST.test(text);
+}
+
 function isIncoming(event: EventEnvelope): boolean {
   if (event.type.endsWith('.self')) return false;
   if (event.source === 'persona' || event.source === 'core') return false;
@@ -915,18 +982,29 @@ function isIncoming(event: EventEnvelope): boolean {
   return event.origin === 'external';
 }
 
+/** 显示名与其中长度足够的短名；单字短名不做裸文本匹配，避免“开心”这类误判。 */
+function addressNames(displayName: string): string[] {
+  const short = displayName.split('·').pop()?.trim() ?? '';
+  return [displayName, short].filter((n, i, all) => n.length >= 2 && all.indexOf(n) === i);
+}
+
 function isAddressed(events: readonly EventEnvelope[], displayName: string): boolean {
   if (events.some((e) => e.source === 'console' && (e.type === 'console.message' || e.type === 'console.invite'))) return true;
   if (isPrivateConversation(events)) return true;
+  const names = addressNames(displayName);
   return events.some((e) => {
     if (e.meta?.mentionedSelf === true || e.meta?.addressed === true) return true;
     const text = e.text;
-    return text.includes(`@${displayName}`) || text.includes('@你') || text.includes('@我') || text.includes('@Kmch');
+    return text.includes(`@${displayName}`) || names.some((n) => text.includes(n))
+      || text.includes('@你') || text.includes('@我') || text.includes('@Kmch');
   });
 }
 
 function isMentioned(events: readonly EventEnvelope[], displayName: string): boolean {
-  return events.some((e) => e.meta?.mentionedSelf === true || e.text.includes(`@${displayName}`) || e.text.includes('@你') || e.text.includes('@我'));
+  const names = addressNames(displayName);
+  return events.some((e) => e.meta?.mentionedSelf === true
+    || e.text.includes(`@${displayName}`) || names.some((n) => e.text.includes(n))
+    || e.text.includes('@你') || e.text.includes('@我'));
 }
 
 function convKind(events: readonly EventEnvelope[]): string | undefined {
@@ -940,11 +1018,24 @@ function convKind(events: readonly EventEnvelope[]): string | undefined {
 }
 
 function isPrivateConversation(events: readonly EventEnvelope[]): boolean {
-  return convKind(events) === 'private' || events.some((e) => typeof e.meta?.conv === 'string' && e.meta.conv.startsWith('private:'));
+  if (convKind(events) === 'private') return true;
+  return events.some((e) => {
+    const meta = e.meta ?? {};
+    if (typeof meta.conv === 'string') return meta.conv.startsWith('private:');
+    // 自定义 World 可能只给 user_id；与 ChannelRouter.targetOf 的约定保持一致。
+    if (typeof meta.group_id === 'string' && meta.group_id.trim()) return false;
+    if (meta.reply_to !== undefined) return false;
+    return typeof meta.user_id === 'string' && meta.user_id.trim().length > 0;
+  });
 }
 
 function isGroupConversation(events: readonly EventEnvelope[]): boolean {
-  return convKind(events) === 'group' || events.some((e) => typeof e.meta?.conv === 'string' && e.meta.conv.startsWith('group:'));
+  if (convKind(events) === 'group') return true;
+  return events.some((e) => {
+    const meta = e.meta ?? {};
+    if (typeof meta.conv === 'string') return meta.conv.startsWith('group:');
+    return typeof meta.group_id === 'string' && meta.group_id.trim().length > 0;
+  });
 }
 
 

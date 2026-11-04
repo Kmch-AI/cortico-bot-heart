@@ -52,26 +52,73 @@ function mountHeart(ctx: WebUiPanelContext): void {
   });
 }
 
+interface PendingIdentity {
+  kind: string;
+  title: string;
+  content: string;
+  subject?: string;
+  scope: { type: string; id?: string };
+}
+
 function mountMemories(ctx: WebUiPanelContext): void {
   const { ui, root } = ctx;
   const card = ui.sheet({ title: '记忆' });
   root.append(card.el);
   card.body.append(ui.placeholder('读取中…'));
-  void ctx.invoke<MemoryRow[]>('list', [{ limit: 50 }]).then((rows) => {
+
+  const reload = async (): Promise<void> => {
+    const [rows, pending] = await Promise.all([
+      ctx.invoke<MemoryRow[]>('list', [{ limit: 50 }]),
+      ctx.invoke<PendingIdentity[]>('identity_pending', []).catch(() => [] as PendingIdentity[]),
+    ]);
     if (ctx.signal.aborted) return;
-    if (rows.length === 0) { card.body.replaceChildren(ui.placeholder('还没有记忆。')); return; }
-    const list = ui.h('div', 'heart-memories');
-    for (const row of rows) {
-      const item = ui.h('div', 'heart-memory');
-      item.append(
-        ui.h('div', 'heart-memory-title', `${row.title}`),
-        ui.h('div', 'heart-memory-meta', `${row.kind} · ${row.tier} · ${row.scope.type}${row.scope.id ? `:${row.scope.id}` : ''} · 置信 ${pct(row.confidence)} · 重要 ${pct(row.salience)}`),
-        ui.h('div', 'heart-memory-body', row.content),
-      );
-      list.append(item);
+    const box = ui.h('div');
+
+    if (pending.length > 0) {
+      const section = ui.h('div', 'heart-pending');
+      section.append(ui.h('div', 'heart-pending-title', `待审核心身份 ${pending.length}`));
+      pending.forEach((row, index) => {
+        const item = ui.h('div', 'heart-memory');
+        const actions = ui.actions();
+        const act = (method: string): void => {
+          void ctx.invoke(method, [index]).then(() => reload(), (error: unknown) => {
+            if (!ctx.signal.aborted) section.append(ui.msgline(String(error), true));
+          });
+        };
+        actions.append(
+          ui.button('批准', { variant: 'primary', size: 'sm', onClick: () => act('identity_approve') }),
+          ui.button('拒绝', { variant: 'plain', size: 'sm', onClick: () => act('identity_reject') }),
+        );
+        item.append(
+          ui.h('div', 'heart-memory-title', row.title),
+          ui.h('div', 'heart-memory-meta', `${row.kind} · ${row.scope.type}${row.scope.id ? `:${row.scope.id}` : ''}${row.subject ? ` · ${row.subject}` : ''}`),
+          ui.h('div', 'heart-memory-body', row.content),
+          actions,
+        );
+        section.append(item);
+      });
+      box.append(section);
     }
-    card.body.replaceChildren(list);
-  }, (error: unknown) => {
+
+    if (rows.length === 0) {
+      box.append(ui.placeholder('还没有记忆。'));
+    } else {
+      const list = ui.h('div', 'heart-memories');
+      for (const row of rows) {
+        const item = ui.h('div', 'heart-memory');
+        item.append(
+          ui.h('div', 'heart-memory-title', `${row.title}`),
+          ui.h('div', 'heart-memory-meta', `${row.kind} · ${row.tier} · ${row.scope.type}${row.scope.id ? `:${row.scope.id}` : ''} · 置信 ${pct(row.confidence)} · 重要 ${pct(row.salience)}`),
+          ui.h('div', 'heart-memory-body', row.content),
+        );
+        list.append(item);
+      }
+      box.append(list);
+    }
+    card.body.replaceChildren(box);
+  };
+
+  void reload().catch((error: unknown) => {
     if (!ctx.signal.aborted) card.body.replaceChildren(ui.msgline(String(error), true));
   });
 }

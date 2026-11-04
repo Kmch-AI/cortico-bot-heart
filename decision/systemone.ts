@@ -12,9 +12,11 @@ import {
   type SystemOneResponse,
 } from './types.ts';
 
-const MAX_QUESTIONS = 256;
+/** 与 StartLux / Transformers 的 /v1/systemone 校验保持一致。 */
+const MAX_QUESTIONS = 64;
 const MAX_STATE_TOKENS = 65_536;
-const MAX_CHOICES = 255;
+const MAX_CHOICES = 26;
+const MAX_SCORE_LEVELS = 10;
 
 function joinUrl(baseUrl: string, path: string): string {
   const base = baseUrl.replace(/\/+$/, '');
@@ -39,8 +41,8 @@ function validate(req: SystemOneRequest): void {
       if (n < 2 || n > MAX_CHOICES) throw new SystemOneError('invalid-response', `choice ${id} 需要 2–${MAX_CHOICES} 个选项`);
     }
     if (q.type === 'score') {
-      const n = Object.keys((q as Extract<SystemOneQuestion, { type: 'score' }>).legend ?? {}).length;
-      if (n < 2 || n > 10) throw new SystemOneError('invalid-response', `score ${id} 需要 2–10 级`);
+      const n = (q as Extract<SystemOneQuestion, { type: 'score' }>).criteria?.length ?? 0;
+      if (n < 2 || n > MAX_SCORE_LEVELS) throw new SystemOneError('invalid-response', `score ${id} 需要 2–${MAX_SCORE_LEVELS} 级 criteria 数组`);
     }
   }
   if (estimateTokens(req.state) > MAX_STATE_TOKENS) {
@@ -63,12 +65,15 @@ function parseResponse(raw: unknown): SystemOneResponse {
     }
     if (answer.type === 'choice') {
       const a = answer as { choice?: unknown; probabilities?: unknown };
-      if (typeof a.choice !== 'string') throw new SystemOneError('invalid-response', `答案 ${id} 的 choice 不是字符串`);
+      // allow_none 时上游可能返回 choice: null（弃权）；交给上层回退，不当作坏响应。
+      if (typeof a.choice !== 'string' && a.choice !== null) {
+        throw new SystemOneError('invalid-response', `答案 ${id} 的 choice 不是字符串或 null`);
+      }
     }
     if (answer.type === 'score') {
       const a = answer as { score?: unknown };
-      if (typeof a.score !== 'string' && typeof a.score !== 'number') {
-        throw new SystemOneError('invalid-response', `答案 ${id} 的 score 不是等级`);
+      if (typeof a.score !== 'number' || !Number.isFinite(a.score)) {
+        throw new SystemOneError('invalid-response', `答案 ${id} 的 score 不是数值期望等级`);
       }
     }
   }

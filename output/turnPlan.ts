@@ -43,6 +43,8 @@ export interface TurnPlanInput {
   recentAssistantCount?: number;
   voiceAvailable?: boolean;
   explicitVoiceRequested?: boolean;
+  /** 用户明确要求记住某事；这类回合至少应该回一句。 */
+  explicitMemoryRequested?: boolean;
 }
 
 const INTENTS: readonly CommunicativeIntent[] = [
@@ -65,17 +67,16 @@ function noulOf(answer: SystemOneAnswer | undefined, fallback: boolean): boolean
   return answer.noul >= 0.5;
 }
 
+/** score 是 0..levels 的期望等级值，直接使用；不要再拿 legend 的键反查。 */
 function scoreOf(answer: SystemOneAnswer | undefined, fallback: number, levels: number): number {
   if (!answer || answer.type !== 'score') return fallback;
-  const n = Number(answer.score);
+  const n = typeof answer.score === 'number' ? answer.score : Number(answer.score);
   if (!Number.isFinite(n)) return fallback;
-  const values = Object.keys(answer.legend ?? {});
-  const index = values.indexOf(String(answer.score));
-  return index >= 0 ? index / Math.max(1, values.length - 1) * levels : Math.max(0, Math.min(levels, n));
+  return Math.max(0, Math.min(levels, n));
 }
 
 export function heuristicTurnPlan(input: TurnPlanInput): TurnPlan {
-  const direct = input.addressed || input.mentioned || input.isPrivate;
+  const direct = input.addressed || input.mentioned || input.isPrivate || input.explicitMemoryRequested === true;
   const question = /[?？]|吗|呢|怎么|为什么|如何|帮我|请问/.test(input.text);
   const tired = input.mood.energy < 0.3;
   const tense = input.mood.tension > 0.65;

@@ -10,20 +10,22 @@ export type SystemOneQuestionType = 'noul' | 'choice' | 'score';
 export interface NoulQuestion {
   type: 'noul';
   instructions: string;
+  /** 可选：true/false 两个选项的补充说明。 */
+  criteria?: { true?: string; false?: string };
 }
 
 export interface ChoiceQuestion {
   type: 'choice';
   instructions: string;
-  /** 选项 id 到一句判断标准的映射；至少 2 项。 */
+  /** 选项 id 到一句判断标准的映射；2–26 项。 */
   criteria: Record<string, string>;
 }
 
 export interface ScoreQuestion {
   type: 'score';
   instructions: string;
-  /** 等级 id 到含义的映射；2–10 级。 */
-  legend: Record<string, string>;
+  /** 等级描述，最低级在前；2–10 级。Jev 的 score 用 criteria 数组，不是 legend 映射。 */
+  criteria: string[];
 }
 
 export type SystemOneQuestion = NoulQuestion | ChoiceQuestion | ScoreQuestion;
@@ -36,15 +38,20 @@ export interface NoulAnswer {
 
 export interface ChoiceAnswer {
   type: 'choice';
-  choice: string;
+  /** allow_none 生效时可能为 null，表示弃权。 */
+  choice: string | null;
   confidence: number;
   probabilities: Record<string, number>;
+  /** allow_none 的额外选项概率；普通选项概率已重新归一。 */
+  none_probability?: number;
 }
 
 export interface ScoreAnswer {
   type: 'score';
-  score: string;
+  /** 按等级概率加权的期望值，0..n-1；不是等级 id 字符串。 */
+  score: number;
   confidence: number;
+  /** 等级 id（"0".."n-1"）到描述的映射。 */
   legend: Record<string, string>;
   probabilities: Record<string, number>;
 }

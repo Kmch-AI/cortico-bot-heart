@@ -15,6 +15,8 @@ export interface MemoryToolOptions {
   allowForget?: boolean;
   /** 当前对话 scope；memory_search / memory_note 未显式指定时用它。 */
   currentScope?: () => MemoryScope;
+  /** 本批用户是否明确要求记住；用于把 memory_note 标成 explicit。 */
+  explicitRequest?: () => boolean;
 }
 
 const KINDS: readonly MemoryKind[] = ['identity', 'relationship', 'preference', 'semantic', 'episodic', 'procedural', 'commitment', 'affective', 'goal'];
@@ -67,7 +69,7 @@ export function memoryToolDecls(): Array<Omit<ToolDef, 'handler'>> {
     },
     {
       name: 'memory_note',
-      description: 'Propose a durable memory. It goes through the save decision; it is not written immediately.',
+      description: 'Propose a durable memory. It goes through the save decision; it is not written immediately. identity means your own core self-definition only; facts about the user or other people are semantic/relationship with subject set.',
       tags: ['write'],
       parameters: {
         type: 'object',
@@ -79,6 +81,7 @@ export function memoryToolDecls(): Array<Omit<ToolDef, 'handler'>> {
           scope_id: { type: 'string' },
           subject: { type: 'string' },
           sensitivity: { type: 'string', enum: [...SENSITIVITY] },
+          explicit: { type: 'boolean', description: 'True only when the user explicitly asked to remember this.' },
         },
         required: ['kind', 'title', 'content'],
       },
@@ -166,7 +169,7 @@ async function handle(name: string, args: Record<string, unknown>, opts: MemoryT
         content: content.slice(0, 2000),
         evidence: [{ at: new Date().toISOString(), quote: content.slice(0, 200), source: 'memory_note' }],
         sensitivity: asSensitivity(args.sensitivity),
-        explicit: true,
+        explicit: args.explicit === true || opts.explicitRequest?.() === true,
       };
       if (!opts.onNote) return '记忆队列不可用，本条未保存。';
       opts.onNote(candidate);

@@ -16,9 +16,12 @@ export interface HeartBotConfig extends HeartConfig {}
 const DECLARES: readonly WorldDeclaration[] = ['console', 'qq', 'voice', 'service'];
 
 function build(loaded: LoadedConfig<HeartBotConfig>, worlds: World[]): BotParts<HeartBotConfig> {
+  // 包内模板只读；WebUI 的保存写到部署根下的 prompts/，运行时优先读这里。
+  const promptDir = join(loaded.rootDir, 'prompts');
   const persona = new HeartPersona({
     memoryDir: loaded.memoryDir,
     packageDir: HERE,
+    promptDir,
     worlds,
     config: () => loaded.config,
     secret: (name) => loaded.secret(name),
@@ -32,11 +35,6 @@ function build(loaded: LoadedConfig<HeartBotConfig>, worlds: World[]): BotParts<
     onStop: () => persona.shutdown(),
     webUi: {
       configGroups: heartConfigGroups(),
-      promptDocs: [
-        { key: 'persona.prefix', title: 'PREFIX', description: '稳定人格前缀：身份、表达目标、工具路由。', path: join(HERE, 'persona', 'PREFIX.md') },
-        { key: 'persona.behavior', title: 'BEHAVIOR', description: '交际行为与表达原则。', path: join(HERE, 'persona', 'BEHAVIOR.md') },
-        { key: 'persona.memoryProtocol', title: 'MEMORY_PROTOCOL', description: '记忆读写、隐私与冲突处理协议。', path: join(HERE, 'persona', 'MEMORY_PROTOCOL.md') },
-      ],
       status: () => persona.store
         ? {
           memory: persona.store.stats(),

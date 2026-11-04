@@ -15,6 +15,8 @@ export interface WriteOptions {
   hotLimit?: number;
   /** 相似度达到此值时直接合并，不再调用 SystemOne。 */
   mergeThreshold?: number;
+  /** bot 自己的名字/自称；用来区分“核心身份”和“关于某人的事实”。 */
+  selfNames?: readonly string[];
 }
 
 export interface WriteResult {
@@ -26,6 +28,22 @@ export interface WriteResult {
 
 function contentKey(candidate: MemoryCandidate): string {
   return `${candidate.title}\n${candidate.content}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 核心身份 = bot 自己的、全局的自述。关于用户/他人的“名字、身份、资料”是 semantic 事实，
+ * 不能因为模型选了 identity 就卡进人工待审队列；这是 0.1.1 里记忆写不进去的主因。
+ */
+function normalizeIdentity(candidate: MemoryCandidate, selfNames: readonly string[]): MemoryCandidate {
+  if (candidate.kind !== 'identity') return candidate;
+  if (candidate.scope.type !== 'global') return { ...candidate, kind: 'semantic' };
+  const subject = candidate.subject?.trim().toLowerCase();
+  if (!subject) return candidate;
+  const self = selfNames.map((name) => name.trim().toLowerCase()).filter(Boolean);
+  // 单字简称只做精确匹配，避免“小心”这类普通词被当成 bot 自称。
+  const aboutSelf = self.some((name) => subject === name
+    || (name.length >= 3 && (subject.includes(name) || name.includes(subject))));
+  return aboutSelf ? candidate : { ...candidate, kind: 'semantic' };
 }
 
 function heuristicDecision(candidate: MemoryCandidate, neighbors: readonly MemoryRecord[]): MemoryWriteDecision {
@@ -40,7 +58,20 @@ function heuristicDecision(candidate: MemoryCandidate, neighbors: readonly Memor
   return { save: true, op: 'create', targetIds: [], confidence: candidate.confidence ?? 0.6, salience: candidate.salience ?? 0.5, reason: 'heuristic create' };
 }
 
-export async function writeCandidate(candidate: MemoryCandidate, opts: WriteOptions): Promise<WriteResult> {
+export async function writeCandidate(raw: MemoryCandidate, opts: WriteOptions): Promise<WriteResult> {
+  const candidate = normalizeIdentity(raw, opts.selfNames ?? []);
+
+  // 密钥/令牌即使被显式要求也永不落库；只留审计。
+  if (candidate.sensitivity === 'secret') {
+    const applied = opts.store.apply([{ op: 'skip', candidate, reason: 'secret material is never stored' }]);
+    return {
+      applied,
+      decision: { save: false, op: 'skip', targetIds: [], confidence: candidate.confidence ?? 0.6, salience: candidate.salience ?? 0.5, reason: 'secret material is never stored' },
+      candidate,
+      neighbors: [],
+    };
+  }
+
   // 核心身份不能由后台自动改写；先进入待审队列，由 Memory 页批准后再走正常保存。
   if (candidate.kind === 'identity' && candidate.approved !== true) {
     const pending = opts.store.getState<MemoryCandidate[]>('identity:pending') ?? [];
@@ -65,7 +96,15 @@ export async function writeCandidate(candidate: MemoryCandidate, opts: WriteOpti
       hot: opts.store.stats().byTier.hot,
     });
   }
-  decision ??= heuristicDecision(candidate, neighbors);
+  const heuristic = heuristicDecision(candidate, neighbors);
+  // 用户明确说“记住”时，SystemOne 的 skip/defer 不能把候选吞掉；精确重复仍由 heuristic 去重。
+  if (candidate.explicit && (!decision || !decision.save || decision.op === 'skip' || decision.op === 'defer')) {
+    decision = {
+      ...heuristic,
+      reason: `${heuristic.reason}; explicit request overrides ${decision?.reason ?? 'no decision'}`,
+    };
+  }
+  decision ??= heuristic;
 
   // 显式候选即使被 skip 也要保留候选与决策 trace；apply 里会写 audit。
   if (!decision.save || decision.op === 'skip') {

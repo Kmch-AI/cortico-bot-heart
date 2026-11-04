@@ -55,13 +55,6 @@ export interface HeartConfig extends CoreConfig {
   silence: {
     /** auto：检测到 Core drop 就用，否则语义沉默。 */
     mode: 'auto' | 'semantic' | 'core-drop';
-    threshold: number;
-  };
-  attention: {
-    privateBias: number;
-    groupBias: number;
-    mentionBoost: number;
-    deferMinutes: number;
   };
   mood: {
     inertia: number;
@@ -147,13 +140,6 @@ export const HEART_DEFAULTS: HeartConfig = {
   },
   silence: {
     mode: 'auto',
-    threshold: 0.5,
-  },
-  attention: {
-    privateBias: 0.7,
-    groupBias: 0.25,
-    mentionBoost: 0.5,
-    deferMinutes: 10,
   },
   mood: {
     inertia: 0.85,

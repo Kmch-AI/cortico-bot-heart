@@ -15,10 +15,18 @@
       "criteria": { "respond": "...", "silence": "...", "defer": "..." }
     },
     "addressed": { "type": "noul", "instructions": "..." },
-    "depth": { "type": "score", "instructions": "...", "legend": { "0": "...", "4": "..." } }
+    "depth": {
+      "type": "score",
+      "instructions": "...",
+      "criteria": ["自动反应", "浅层", "一般", "深度", "严谨推理"]
+    }
   }
 }
 ```
+
+`score` 的等级描述必须是**最低级在前的数组**，字段名是 `criteria`；写成 `legend: {...}` 会被 StartLux / Jev 以
+`422 a score question needs criteria: a list of levels, lowest first` 拒绝。`choice` 的 `criteria` 才是
+`{选项: 描述}` 映射；`noul` 可选 `criteria: {true, false}`。
 
 响应：
 
@@ -28,16 +36,20 @@
   "answers": {
     "action": { "type": "choice", "choice": "respond", "confidence": 0.82, "probabilities": {} },
     "addressed": { "type": "noul", "noul": 0.96 },
-    "depth": { "type": "score", "score": "2", "confidence": 0.7, "legend": {}, "probabilities": {} }
+    "depth": { "type": "score", "score": 2.0, "confidence": 0.7, "legend": { "0": "...", "4": "..." }, "probabilities": {} }
   },
   "usage": { "input_tokens": 412, "output_tokens": 0 }
 }
 ```
 
-限制：
+`score` 答案是**按等级概率加权的期望值**（0..n-1），不是等级 id 字符串；`legend` 只是等级 id 到描述的映射。
+heart 直接使用数值并四舍五入到最近等级。
 
-- `state` 最大 65,536 tokens；超限返回 `422 STATE_TRUNCATED`，heart 发送前也会拒绝静默截断。
-- `questions` 1–256；`choice` 2–255 项；`score` 2–10 级。
+限制（与 StartLux / Transformers 的 `/v1/systemone` 校验一致）：
+
+- heart 在发送前按 65,536 tokens 估算拒绝超长 `state`，避免静默截断；这是 heart 自己的保护，不是上游错误码
+  （StartLux 不校验该字段，实际上限取决于引擎上下文）。
+- `questions` 1–64；`choice` 1–26 项（heart 至少要求 2）；`score` 2–10 级。
 - `confidence` 是按模型校准的 top probability，阈值不能跨模型复用。
 - SystemOne 不生成文本；`selfIntent`、记忆正文、查询串、`voiceInstruct` 由主模型/fork 写。
 

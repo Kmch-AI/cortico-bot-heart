@@ -84,7 +84,10 @@ describe('write pipeline', () => {
   it('puts identity candidates in the review queue instead of writing them', async () => {
     const store = new SqliteMemoryStore({ path: ':memory:', dim: 16, vectors: false });
     const decision = new DecisionPlane({ client: null, timeoutMs: 100, confidenceThreshold: 0.5 });
-    const result = await writeCandidate(candidate({ kind: 'identity', title: '我是谁', content: '我把自己当作一个会犹豫的人。' }), {
+    const result = await writeCandidate(candidate({
+      kind: 'identity', scope: { type: 'global' }, subject: undefined,
+      title: '我是谁', content: '我把自己当作一个会犹豫的人。',
+    }), {
       store, decision, warmLimit: 5000,
     });
     expect(result.decision.op).toBe('defer');

@@ -66,5 +66,5 @@ db.loadExtension(getLoadablePath());
 | 没有 `node:sqlite` | `JsonlMemoryStore`，内存索引 + JSONL；启动告警 |
 | 有 SQLite、没有 sqlite-vec | 向量存内存/JS 余弦；FTS/元数据走 SQLite |
 | 平台不支持 sqlite-vec | 包照常安装；运行时 `vectorEnabled=false` |
-| 库忙 | 主线程重试 1–2 次；仍忙交给 worker |
+| 库忙 | `busy_timeout=250ms`；失败由 worker 有界重试（最多 3 次） |
 | 库损坏 | 从备份恢复；无备份时用 export/audit 重建；恢复期间只用 hot memory |

@@ -37,10 +37,10 @@ async function start(health?: unknown): Promise<string> {
             needs_arbiter: { type: 'noul', noul: 0.1 },
             intent: { type: 'choice', choice: 'acknowledge', confidence: 0.7, probabilities: {} },
             stance: { type: 'choice', choice: 'neutral', confidence: 0.7, probabilities: {} },
-            depth: { type: 'score', score: '1', confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+            depth: { type: 'score', score: 1, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
             length: { type: 'choice', choice: 'short', confidence: 0.7, probabilities: {} },
             directness: { type: 'choice', choice: 'neutral', confidence: 0.7, probabilities: {} },
-            playfulness: { type: 'score', score: '0', confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
+            playfulness: { type: 'score', score: 0, confidence: 0.7, legend: { '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e' }, probabilities: {} },
           },
         });
         return;
