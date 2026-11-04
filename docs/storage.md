@@ -56,7 +56,7 @@ db.loadExtension(getLoadablePath());
 
 - `VACUUM INTO '<path>'` 做一致性备份；迁移前必须备份。
 - `export/records.jsonl` 可移植导出，可重建；不是运行真源。
-- `audit/` 按月 JSONL；`decisions/` 按天 JSONL，不写密钥与完整敏感正文。
+- 操作审计在 SQLite 的 `memory_ops` 表；`decisions/` 按天 JSONL，不写密钥与完整敏感正文。需要时可从 `memory_ops` 导出 JSONL。
 - Markdown 视图由 records 生成；手工编辑通过 UI 导入成新版本，不允许“文件改了但库没变”。
 
 ## 降级

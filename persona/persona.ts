@@ -6,7 +6,7 @@
  * - 钩子不 await 记忆任务；只入队，worker 在后台串行处理。
  * - stock Core 上沉默是语义沉默：注入一句“不要回应”，主模型仍会跑一次。
  */
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   BlobStore,
@@ -608,6 +608,43 @@ ${chosen.text}`, 'arbiter');
           { id: 'memories', title: zh ? '记忆' : 'Memories', getMethods: ['list', 'read', 'stats', 'identity_pending'] },
           { id: 'decisions', title: zh ? '决策' : 'Decisions', getMethods: ['traces'] },
         ],
+        storage: [
+          {
+            key: 'heart-db',
+            label: zh ? '记忆库' : 'Memory DB',
+            kind: 'disk',
+            location: 'memory/heart.db',
+            danger: true,
+            note: zh ? 'SQLite 运行真源；清空请用备份/恢复，不通过这里的清除按钮。' : 'SQLite source of truth; use backup/restore, not the clear button.',
+            stat: () => {
+              const stats = this.store?.stats();
+              return stats ? `${stats.active} 条 · ${(stats.dbBytes / 1024).toFixed(1)}KB` : '未启动';
+            },
+            clear: () => { throw new Error(zh ? '记忆库不能在这里清空；请用备份/恢复流程。' : 'Use the backup/restore flow; the DB cannot be cleared here.'); },
+          },
+          {
+            key: 'heart-decisions',
+            label: zh ? '决策 trace' : 'Decision traces',
+            kind: 'disk',
+            location: 'memory/decisions/',
+            stat: () => `${this.countFiles('decisions')} 个文件`,
+            clear: () => {
+              for (const name of this.listFiles('decisions')) rmSync(join(this.memoryDir, 'decisions', name), { force: true });
+              return zh ? '已清空决策 trace。' : 'Decision traces cleared.';
+            },
+          },
+          {
+            key: 'heart-export',
+            label: zh ? '导出' : 'Exports',
+            kind: 'disk',
+            location: 'memory/export/',
+            stat: () => `${this.countFiles('export')} 个文件`,
+            clear: () => {
+              for (const name of this.listFiles('export')) rmSync(join(this.memoryDir, 'export', name), { force: true });
+              return zh ? '已清空导出。' : 'Exports cleared.';
+            },
+          },
+        ],
       },
       invoke: async (panel, method, args) => this.invoke(panel, method, args),
     };
@@ -668,8 +705,8 @@ ${chosen.text}`, 'arbiter');
     }
     if (panel === 'memories' && method === 'forget') {
       const id = String(args[0] ?? '');
-      const hard = args[1] === true;
-      return { ok: this.store.forget(id, hard ? 'hard' : 'soft') };
+      if (args[1] !== true) return { ok: false, error: '需要操作者确认（confirm=true）' };
+      return { ok: this.store.forget(id, 'soft') };
     }
     if (panel === 'memories' && method === 'export') {
       const path = join(this.memoryDir, 'export', 'records.jsonl');
@@ -695,6 +732,16 @@ ${chosen.text}`, 'arbiter');
   // -------------------------------------------------------------------------
   // 内部
   // -------------------------------------------------------------------------
+
+  private listFiles(sub: 'decisions' | 'export'): string[] {
+    const dir = join(this.memoryDir, sub);
+    if (!existsSync(dir)) return [];
+    try { return readdirSync(dir).filter((name) => statSync(join(dir, name)).isFile()); } catch { return []; }
+  }
+
+  private countFiles(sub: 'decisions' | 'export'): number {
+    return this.listFiles(sub).length;
+  }
 
   private identityText(): string {
     if (!this.store) return `我是 ${this.opts.config().identity.displayName}。`;

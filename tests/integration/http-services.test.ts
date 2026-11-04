@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SystemOneClient } from '../../decision/systemone.ts';
 import { HttpEmbeddingService, HttpRerankService } from '../../memory/vectors.ts';
+import { probeService } from '../../decision/probe.ts';
 
 let server: Server | null = null;
 
@@ -15,6 +16,17 @@ async function start(): Promise<string> {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(value));
       };
+      if (req.url === '/health') {
+        send({
+          status: 'ok', ready: true, version: '0.5.0', uptimeSec: 1,
+          services: [
+            { entry: { type: 'systemone', id: 'jev' }, phase: 'online' },
+            { entry: { type: 'llamacpp', id: 'llama' }, phase: 'online' },
+          ],
+          models: 2,
+        });
+        return;
+      }
       if (req.url === '/v1/systemone') {
         send({
           model: 'jev',
@@ -61,6 +73,10 @@ describe('HTTP service contracts', () => {
   it('speaks SystemOne, embeddings and rerank shapes', async () => {
     const baseUrl = await start();
     const client = new SystemOneClient({ baseUrl, model: 'jev', timeoutMs: 1000 });
+    const probe = await probeService({ baseUrl, timeoutMs: 1000 });
+    expect(probe).toMatchObject({ reachable: true, systemone: true, embeddings: true, rerank: true });
+    expect(probe.models).toEqual([]);
+
     const response = await client.ask({
       state: { events: 'hi' },
       questions: {

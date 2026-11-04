@@ -68,12 +68,12 @@
 | embeddings 不可用 | `hashEmbedding` 粗召回，标记 degraded |
 | rerank 不可用 | 0.45 向量 + 0.25 BM25 + 0.15 新近 + 0.15 重要度的加权近似（当前实现为 RRF + confidence/salience/recency 加权） |
 
-## 服务侧前置
+## 服务侧
 
-服务 0.4.3 只有 speech 路由；heart 需要：
+服务 0.5.0 已提供：
 
-- `POST /v1/systemone` 原样转发到 Jev 兼容服务，不偷偷改写为 OpenAI chat；
-- `POST /v1/embeddings`、`POST /v1/rerank` 代理到本地 llamacpp；
-- 没有条目时返回 503/501，heart 降级。
+- `POST /v1/systemone` 原样转发到 Jev 兼容的 `systemone` 条目；
+- `POST /v1/embeddings`、`POST /v1/rerank` 代理到 `llamacpp` 条目；
+- 没有对应条目返回 503；llamacpp 上游不支持 rerank 时返回 501；heart 降级。
 
-这些改动在服务插件中，不混进 heart 0.1。
+部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关（默认 `http://127.0.0.1:9883`），并让 `decision.tokenSecret` / `vectors.tokenSecret` 与服务网关的令牌变量一致。

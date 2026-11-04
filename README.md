@@ -56,7 +56,7 @@ blobs/                mem: 句柄
 ## 已知边界
 
 - stock Core 不支持 `onDelivery` drop；沉默是语义沉默，仍会跑一次主模型。独立 Core PR 见 `docs/core-drop.md`。
-- 服务插件的 `/v1/systemone`、`/v1/embeddings`、`/v1/rerank` 尚未在服务 0.4.3 中提供；heart 先跑降级路径。
+- 服务插件 0.5.0 已提供 `/v1/systemone`、`/v1/embeddings`、`/v1/rerank`；部署时把 `decision.serviceUrl` / `vectors.serviceUrl` 指到服务网关。服务不可用时仍走降级。
 - 输出 arbiter 已接线：默认 `auto`，只在 `needsArbiter` 或 `output.mode=arbiter` 时 fork 候选；候选只做文本，不执行工具。
 - 显式「记住」即使被 SystemOne skip 也不向用户确认；这是已接受的信任代价。
 

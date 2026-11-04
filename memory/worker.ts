@@ -152,7 +152,7 @@ export class MemoryWorker {
     let created = 0;
     let updated = 0;
     for (const op of staged) {
-      if (op.candidate) {
+      if (op.candidate && op.op !== 'skip' && op.op !== 'defer') {
         const result = await writeCandidate(op.candidate, {
           store: this.opts.store,
           decision: this.opts.decision,
@@ -161,7 +161,8 @@ export class MemoryWorker {
         });
         created += result.applied.created.length;
         updated += result.applied.updated.length + result.applied.merged.length;
-      } else if (op.op === 'skip' || op.op === 'defer') {
+      } else {
+        // skip/defer 只留审计；defer 的候选下次再整理，不在本轮落库。
         this.opts.store.apply([op]);
       }
     }

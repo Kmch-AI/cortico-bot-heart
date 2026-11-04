@@ -42,12 +42,14 @@ export async function probeService(opts: ServiceProbeOptions): Promise<ServicePr
         type?: string; id?: string; name?: string;
         entry?: { type?: string; id?: string; name?: string };
       }>;
-      models?: Array<string | { id?: string; name?: string }>;
+      models?: number | Array<string | { id?: string; name?: string }>;
     };
     const types = new Set((body.services ?? []).map((s) =>
       s.type ?? s.entry?.type ?? s.id ?? s.entry?.id ?? s.name ?? s.entry?.name ?? '',
     ).filter(Boolean));
-    const models = (body.models ?? []).map((m) => typeof m === 'string' ? m : m.id ?? m.name ?? '').filter(Boolean);
+    // 服务 /health 的 models 是数量;有些实现会给数组。两种都接受。
+    const rawModels = Array.isArray(body.models) ? body.models : [];
+    const models = rawModels.map((m) => typeof m === 'string' ? m : m.id ?? m.name ?? '').filter(Boolean);
     return {
       reachable: true,
       // health 里出现对应条目就认为有路由；真正调用失败仍会走降级。
