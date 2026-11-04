@@ -59,7 +59,7 @@ export async function writeCandidate(candidate: MemoryCandidate, opts: WriteOpti
   const neighbors = hits.map((h) => h.record);
   const exact = neighbors.find((r) => r.title === candidate.title && r.content === candidate.content);
   let decision: MemoryWriteDecision | null = null;
-  if (!exact && opts.decision?.available) {
+  if (!exact && candidate.approved !== true && opts.decision?.available) {
     decision = await opts.decision.memoryWrite(candidate, neighbors, {
       warm: opts.store.stats().active,
       hot: opts.store.stats().byTier.hot,

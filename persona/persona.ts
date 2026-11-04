@@ -697,6 +697,7 @@ ${chosen.text}`, 'arbiter');
   // -------------------------------------------------------------------------
 
   private identityText(): string {
+    if (!this.store) return `我是 ${this.opts.config().identity.displayName}。`;
     const records = this.store.list({ kinds: ['identity'], status: ['active'], limit: 8, orderBy: 'salience' });
     if (records.length > 0) return identityView(records);
     return `我是 ${this.opts.config().identity.displayName}。我的记忆、判断和说话方式构成连续性。`;
