@@ -1,8 +1,8 @@
 {
   "name": "@kmchai/cortico-bot-heart",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
-  "description": "Cortico bot: Kmch AI · 心 — mood, relationship, persistent memory and source-routed voice decisions",
+  "description": "Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持久记忆，按信息来源决定文字/语音与是否开口；发送交给 World。",
   "author": "kmchai",
   "license": "MIT",
   "repository": {
@@ -32,11 +32,11 @@
     "locales": {
       "zh": {
         "displayName": "Kmch AI · 心",
-        "description": "Kmch AI 的 bot 层：心情、关系、持久记忆、按来源路由的语音决策。"
+        "description": "Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持久记忆，按信息来源决定文字/语音与是否开口；发送交给 World。"
       },
       "en": {
         "displayName": "Kmch AI · Heart",
-        "description": "The bot layer of Kmch AI: mood, relationships, persistent memory and source-routed voice decisions."
+        "description": "Kmch AI · Heart: the bot layer for Cortico. Mood, relationships, attention and persistent memory; decides text or voice and whether to speak from each event's source; Worlds deliver."
       }
     },
     "tags": [
@@ -44,7 +44,7 @@
       "qq",
       "voice",
       "memory",
-      "internal-state",
+      "companion",
       "high-cost",
       "sensitive-data",
       "external-setup",

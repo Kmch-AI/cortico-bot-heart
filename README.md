@@ -1,6 +1,6 @@
 # @kmchai/cortico-bot-heart
 
-`Kmch AI · 心`。Cortico 的 bot 层：心情、关系、注意力、持久记忆，以及按信息来源路由的文字/语音决策。
+Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持久记忆，按信息来源决定文字/语音与是否开口；发送交给 World。
 
 入口：`index.ts`。bot id `heart`，契约 `bot v7`。默认声明 `console`、`qq`、`voice`、`service`。
 

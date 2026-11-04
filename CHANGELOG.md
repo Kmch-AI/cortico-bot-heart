@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- 扩展介绍统一为中文的「定位 + 能力 + 边界」格式；npm `description`、市场中文介绍与 README 首段同步；英文市场介绍同步为同一格式的英文镜像。
+- 标签按功能调整：去掉 `internal-state`（这是给 World 的 notice；心是 bot 扩展，内部状态本来就在 Memory），加 `companion`（心情、关系、注意力与是否开口）。
+- 其余标签保留：`im`、`qq`、`voice`、`memory`、`high-cost`、`sensitive-data`、`external-setup`、`experimental`。
+
 ## 0.1.0
 
 首个版本。
