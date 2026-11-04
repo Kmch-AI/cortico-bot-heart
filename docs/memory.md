@@ -6,6 +6,7 @@
 
 - `kind`：identity / relationship / preference / semantic / episodic / procedural / commitment / affective / goal。
 - `tier`：hot / warm / cold。
+- 当前 mood/relationship/attention 的小型状态存在 `memory_meta`，`mood_state` 等表为后续规范化预留。
 - `scope`：global / person / group / thread；`subject` 是规范化主体。
 - `title` / `content`：卡片用短摘要；正文规范化但不写整段聊天。
 - `canonicalKey` / `contentHash`：确定性去重。

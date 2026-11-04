@@ -1,5 +1,5 @@
 /** 默认导出 BotDefinition；deployment.json 的 bot 字段引用包名。 */
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { BotDefinition, BotParts } from 'cortico/bot.ts';
 import type { CoreConfig, World } from 'cortico/core/types.ts';
 import type { LoadedConfig } from 'cortico/core/config.ts';
@@ -32,11 +32,18 @@ function build(loaded: LoadedConfig<HeartBotConfig>, worlds: World[]): BotParts<
     onStop: () => persona.shutdown(),
     webUi: {
       configGroups: heartConfigGroups(),
-      status: () => ({
-        memory: persona.store.stats(),
-        backend: persona.store.backend,
-        worker: { pending: persona.worker.pending, busy: persona.worker.busy },
-      }),
+      promptDocs: [
+        { key: 'persona.prefix', title: 'PREFIX', description: '稳定人格前缀：身份、表达目标、工具路由。', path: join(HERE, 'persona', 'PREFIX.md') },
+        { key: 'persona.behavior', title: 'BEHAVIOR', description: '交际行为与表达原则。', path: join(HERE, 'persona', 'BEHAVIOR.md') },
+        { key: 'persona.memoryProtocol', title: 'MEMORY_PROTOCOL', description: '记忆读写、隐私与冲突处理协议。', path: join(HERE, 'persona', 'MEMORY_PROTOCOL.md') },
+      ],
+      status: () => persona.store
+        ? {
+          memory: persona.store.stats(),
+          backend: persona.store.backend,
+          worker: { pending: persona.worker.pending, busy: persona.worker.busy },
+        }
+        : { backend: 'not started' },
     },
   };
 }

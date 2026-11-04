@@ -37,10 +37,15 @@ export async function probeService(opts: ServiceProbeOptions): Promise<ServicePr
       return { reachable: false, systemone: false, embeddings: false, rerank: false, models: [], error: `HTTP ${res.status}` };
     }
     const body = await res.json() as {
-      services?: Array<{ type?: string; id?: string; name?: string }>;
+      services?: Array<{
+        type?: string; id?: string; name?: string;
+        entry?: { type?: string; id?: string; name?: string };
+      }>;
       models?: Array<string | { id?: string; name?: string }>;
     };
-    const types = new Set((body.services ?? []).map((s) => s.type ?? s.id ?? s.name ?? '').filter(Boolean));
+    const types = new Set((body.services ?? []).map((s) =>
+      s.type ?? s.entry?.type ?? s.id ?? s.entry?.id ?? s.name ?? s.entry?.name ?? '',
+    ).filter(Boolean));
     const models = (body.models ?? []).map((m) => typeof m === 'string' ? m : m.id ?? m.name ?? '').filter(Boolean);
     return {
       reachable: true,

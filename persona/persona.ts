@@ -112,6 +112,7 @@ export class HeartPersona implements Persona {
   private turns = 0;
   private lastVoiceTurn: number | null = null;
   private lastConsolidation = 0;
+  private shutdownDone = false;
 
   constructor(private readonly opts: HeartPersonaOptions) {
     this.memoryDir = opts.memoryDir;
@@ -151,7 +152,8 @@ export class HeartPersona implements Persona {
 
   /** BotParts.onStop 调用；先停 worker，再 checkpoint/关闭 SQLite。 */
   shutdown(): void {
-    if (!this.store) return;
+    if (this.shutdownDone || !this.store) return;
+    this.shutdownDone = true;
     this.worker.stop();
     this.store.close();
   }
@@ -572,7 +574,6 @@ ${chosen.text}`, 'arbiter');
       mood,
       relationship,
       attention: this.attention.current(),
-      identity: this.identityText(),
       planText,
       deliveryText: this.lastDelivery ? formatDeliveryPlan(this.lastDelivery) : '',
       memoryCards: this.lastMemoryCards,
@@ -798,6 +799,7 @@ function isIncoming(event: EventEnvelope): boolean {
 }
 
 function isAddressed(events: readonly EventEnvelope[], displayName: string): boolean {
+  if (events.some((e) => e.source === 'console' && (e.type === 'console.message' || e.type === 'console.invite'))) return true;
   if (isPrivateConversation(events)) return true;
   return events.some((e) => {
     if (e.meta?.mentionedSelf === true || e.meta?.addressed === true) return true;

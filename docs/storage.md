@@ -28,7 +28,7 @@ db.loadExtension(getLoadablePath());
 | `record_vectors` | record_id → vec_rowid / model / dim |
 | `records_fts` | FTS5，`tokenize='trigram'` |
 | `vec_records` | `vec0`，metadata `scope/status/tier`，cosine |
-| `relationships` / `mood_state` / `attention_state` | 预留表；当前小型状态经 `memory_meta` JSON 存 |
+| `relationships` / `mood_state` / `attention_state` | 预留表；0.1 的小型状态经 `memory_meta` JSON 存，后续可迁到这些表做 SQL 视图 |
 | `memory_meta` | schema/embedding/dim 与状态键 |
 | `schema_migrations` | schema 版本 |
 | `memory_ops` | 每个 op 的审计 |

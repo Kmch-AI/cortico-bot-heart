@@ -30,8 +30,6 @@ import type {
 } from './types.ts';
 
 const require = createRequire(import.meta.url);
-// 通过 createRequire 加载，避免 Vite/Vitest 把 node:sqlite 当成可解析的包。
-const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
 
 function vectorExtensionPath(): string | null {
   try {
@@ -102,6 +100,14 @@ export class SqliteMemoryStore implements MemoryStore {
     this.dim = Math.max(1, Math.floor(opts.dim));
     this.wantVectors = opts.vectors !== false;
     if (opts.path !== ':memory:') mkdirSync(dirname(opts.path), { recursive: true });
+    // 通过 createRequire 延迟加载：Vite/Vitest 不会把 node:sqlite 当成可解析的包；
+    // 没有 node:sqlite 的平台由 createMemoryStore 捕获并降级到 JSONL。
+    let DatabaseSync: typeof import('node:sqlite').DatabaseSync;
+    try {
+      ({ DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite'));
+    } catch (err) {
+      throw new Error(`node:sqlite unavailable: ${(err as Error)?.message ?? err}`);
+    }
     this.db = new DatabaseSync(opts.path, { allowExtension: true });
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=${Math.max(50, opts.busyTimeoutMs ?? 250)}; PRAGMA foreign_keys=ON;`);
     this.init();
