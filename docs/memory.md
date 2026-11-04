@@ -91,7 +91,7 @@
 
 - identity 记录包括名字/自称、价值观、边界、语言习惯、长期偏好、关系原则、对自己的叙事。
 - `IDENTITY.md` / `VALUES.md` 是由 identity records 生成的视图，不是第二份真源。
-- identity 常驻 hot，但只注入摘要；核心身份变更需要人工确认（设计约束，当前通过 Memory 页操作与审计实现）。
+- identity 常驻 hot，但只注入摘要；核心身份变更进入 `identity:pending` 待审队列，由 Memory 页批准后才写入，identity 不物理删除。
 - 模型替换/重启/交接不改变 identity；session 日志不是人格真源。
 
 ## 隐私

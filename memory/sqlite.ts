@@ -685,6 +685,8 @@ export class SqliteMemoryStore implements MemoryStore {
   forget(id: string, mode: 'soft' | 'hard'): boolean {
     const exists = this.get(id);
     if (!exists) return false;
+    // identity 只版本化，不物理删除；操作者只能标记删除。
+    if (mode === 'hard' && exists.kind === 'identity') mode = 'soft';
     this.tx(() => {
       const now = nowIso();
       this.stmt(`UPDATE records SET status='deleted', updated_at=? WHERE id=?`).run(now, id);

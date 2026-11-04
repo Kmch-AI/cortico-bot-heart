@@ -113,6 +113,7 @@ export class HeartPersona implements Persona {
   private lastVoiceTurn: number | null = null;
   private lastConsolidation = 0;
   private shutdownDone = false;
+  private clientKey = '';
 
   constructor(private readonly opts: HeartPersonaOptions) {
     this.memoryDir = opts.memoryDir;
@@ -179,6 +180,7 @@ export class HeartPersona implements Persona {
     this.embedding = this.makeEmbedding();
     this.rerank = this.makeRerank();
     this.decision = this.makeDecision();
+    this.clientKey = this.currentClientKey();
     this.worker = new MemoryWorker({
       core: () => this.core,
       store: this.store,
@@ -310,6 +312,7 @@ export class HeartPersona implements Persona {
 
   async onDelivery(ctx: { events: EventEnvelope[] }): Promise<void> {
     this.initStores();
+    this.refreshClients();
     const incoming = ctx.events.filter(isIncoming);
     if (incoming.length === 0) {
       // 内部通知（记忆回执、交接提示）不产生新的 turn plan；避免把上一批的计划当成这一批的。
@@ -602,7 +605,7 @@ ${chosen.text}`, 'arbiter');
       ],
       memory: {
         panels: [
-          { id: 'memories', title: zh ? '记忆' : 'Memories', getMethods: ['list', 'read', 'stats'] },
+          { id: 'memories', title: zh ? '记忆' : 'Memories', getMethods: ['list', 'read', 'stats', 'identity_pending'] },
           { id: 'decisions', title: zh ? '决策' : 'Decisions', getMethods: ['traces'] },
         ],
       },
@@ -640,6 +643,28 @@ ${chosen.text}`, 'arbiter');
     if (panel === 'memories' && method === 'read') {
       const id = String(args[0] ?? '');
       return this.store.get(id) ?? null;
+    }
+    if (panel === 'memories' && method === 'identity_pending') {
+      return this.store.getState<MemoryCandidate[]>('identity:pending') ?? [];
+    }
+    if (panel === 'memories' && method === 'identity_approve') {
+      const pending = this.store.getState<MemoryCandidate[]>('identity:pending') ?? [];
+      const index = Number(args[0]);
+      if (!Number.isInteger(index) || index < 0 || index >= pending.length) return { ok: false, error: 'invalid index' };
+      const [candidate] = pending.splice(index, 1);
+      this.store.setState('identity:pending', pending);
+      if (!candidate) return { ok: false, error: 'missing candidate' };
+      this.worker.enqueueExplicit({ ...candidate, approved: true }, candidate.scope, 'operator');
+      return { ok: true };
+    }
+    if (panel === 'memories' && method === 'identity_reject') {
+      const pending = this.store.getState<MemoryCandidate[]>('identity:pending') ?? [];
+      const index = Number(args[0]);
+      if (!Number.isInteger(index) || index < 0 || index >= pending.length) return { ok: false, error: 'invalid index' };
+      const [candidate] = pending.splice(index, 1);
+      this.store.setState('identity:pending', pending);
+      if (candidate) this.store.apply([{ op: 'skip', candidate, reason: 'operator rejected identity candidate' }]);
+      return { ok: true };
     }
     if (panel === 'memories' && method === 'forget') {
       const id = String(args[0] ?? '');
@@ -754,6 +779,27 @@ ${chosen.text}`, 'arbiter');
       dim: cfg.vectors.dim,
       timeoutMs: cfg.vectors.timeoutMs,
       fetch: globalThis.fetch,
+    });
+  }
+
+  /** 决策/向量参数热改时重建客户端；worker 拿到新引用，已入队的包不重跑。 */
+  private refreshClients(): void {
+    if (!this.decision) return;
+    const key = this.currentClientKey();
+    if (key === this.clientKey) return;
+    this.embedding = this.makeEmbedding();
+    this.rerank = this.makeRerank();
+    this.decision = this.makeDecision();
+    this.worker.setClients(this.decision, this.opts.config().memory.autoEmbedding ? this.embedding : null);
+    this.clientKey = key;
+  }
+
+  private currentClientKey(): string {
+    const cfg = this.opts.config();
+    return JSON.stringify({
+      decision: cfg.decision,
+      vectors: cfg.vectors,
+      autoEmbedding: cfg.memory.autoEmbedding,
     });
   }
 

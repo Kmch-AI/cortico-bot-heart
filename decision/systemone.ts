@@ -17,7 +17,9 @@ const MAX_STATE_TOKENS = 65_536;
 const MAX_CHOICES = 255;
 
 function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}${path}`;
+  const base = baseUrl.replace(/\/+$/, '');
+  if (base.endsWith('/v1') && path.startsWith('/v1/')) return `${base}${path.slice(3)}`;
+  return `${base}${path}`;
 }
 
 function estimateTokens(value: unknown): number {

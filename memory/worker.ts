@@ -51,6 +51,12 @@ export class MemoryWorker {
   get pending(): number { return this.queue.length; }
   get busy(): boolean { return this.running; }
 
+  /** 配置热改后替换决策/embedding 客户端；已在处理的包继续用旧引用完成。 */
+  setClients(decision: DecisionPlane | null, embedding: EmbeddingService | null): void {
+    (this.opts as { decision: DecisionPlane | null }).decision = decision;
+    (this.opts as { embedding: EmbeddingService | null }).embedding = embedding;
+  }
+
   stop(): void {
     this.stopped = true;
     this.queue.length = 0;
@@ -288,7 +294,11 @@ function normalizeCandidate(c: Record<string, unknown>, packet: MemoryPacket): i
   const scope: MemoryScope = SCOPES.includes(scopeType as MemoryScope['type'])
     ? { type: scopeType as MemoryScope['type'], ...(scopeId ? { id: scopeId } : {}) }
     : { type: 'global' };
-  const sensitivity = SENSITIVITY.includes(c.sensitivity as MemorySensitivity) ? c.sensitivity as MemorySensitivity : 'normal';
+  let sensitivity = SENSITIVITY.includes(c.sensitivity as MemorySensitivity) ? c.sensitivity as MemorySensitivity : 'normal';
+  // 群聊里写进 person scope 的内容默认按 private 处理；不能因为模型忘了标就落成 public。
+  if (sensitivity === 'normal' && scope.type === 'person' && packet.scope?.type === 'group') {
+    sensitivity = 'private';
+  }
   const evidence = Array.isArray(c.evidence) && c.evidence.length > 0
     ? c.evidence.slice(0, 8).map((e) => {
       const x = (e ?? {}) as Record<string, unknown>;

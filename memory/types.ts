@@ -92,6 +92,8 @@ export interface MemoryCandidate {
   sensitivity: MemorySensitivity;
   /** 用户明确说“记住”时置 true；被 skip 也要留审计。 */
   explicit?: boolean;
+  /** 操作者在 Memory 页批准的核心身份变更；后台 fork 不应设置。 */
+  approved?: boolean;
   confidence?: number;
   salience?: number;
   canonicalKey?: string;

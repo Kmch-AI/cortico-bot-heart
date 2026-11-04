@@ -35,7 +35,7 @@ Persona 页（`persona:heart`）：
 
 Memory 页：
 
-- `memories`：记忆列表/搜索/读取/导出/巩固/删除（删除是危险操作，需确认）。
+- `memories`：记忆列表/搜索/读取/导出/巩固/删除（删除是危险操作，需确认）；`identity_pending` / `identity_approve` / `identity_reject` 处理核心身份待审。
 - `decisions`：最近决策 trace。
 
 面板只读/操作 Memory，不替代 World 页面。

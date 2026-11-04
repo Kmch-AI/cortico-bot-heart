@@ -41,6 +41,19 @@ function heuristicDecision(candidate: MemoryCandidate, neighbors: readonly Memor
 }
 
 export async function writeCandidate(candidate: MemoryCandidate, opts: WriteOptions): Promise<WriteResult> {
+  // 核心身份不能由后台自动改写；先进入待审队列，由 Memory 页批准后再走正常保存。
+  if (candidate.kind === 'identity' && candidate.approved !== true) {
+    const pending = opts.store.getState<MemoryCandidate[]>('identity:pending') ?? [];
+    pending.push({ ...candidate, approved: false });
+    opts.store.setState('identity:pending', pending.slice(-20));
+    const applied = opts.store.apply([{ op: 'defer', candidate, reason: 'identity review required' }]);
+    return {
+      applied,
+      decision: { save: false, op: 'defer', targetIds: [], confidence: candidate.confidence ?? 0.6, salience: candidate.salience ?? 0.5, reason: 'identity review required' },
+      candidate,
+      neighbors: [],
+    };
+  }
   const query = contentKey(candidate);
   const hits = opts.store.search({ text: query, limit: 8 });
   const neighbors = hits.map((h) => h.record);

@@ -182,11 +182,13 @@ async function handle(name: string, args: Record<string, unknown>, opts: MemoryT
     }
     case 'memory_forget': {
       const id = String(args.id ?? '');
-      if (!opts.store.get(id)) return '没有这条记忆。';
+      const record = opts.store.get(id);
+      if (!record) return '没有这条记忆。';
       if (args.confirm !== true) return '已记录忘记请求；需要操作者在 Memory 页确认后才会删除。';
       if (!opts.allowForget) return '当前配置不允许模型直接删除；请在 Memory 页操作。';
-      const ok = opts.store.forget(id, args.hard === true ? 'hard' : 'soft');
-      return ok ? `已${args.hard === true ? '物理删除' : '标记删除'} ${id}。` : '删除失败。';
+      const hard = args.hard === true && record.kind !== 'identity';
+      const ok = opts.store.forget(id, hard ? 'hard' : 'soft');
+      return ok ? `已${hard ? '物理删除' : '标记删除'} ${id}。` : '删除失败。';
     }
     default:
       return `未知记忆工具 ${name}`;

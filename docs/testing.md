@@ -22,7 +22,9 @@ pnpm check:extension <本包目录>
 - `tests/unit/decision.test.ts`：SystemOne typed answers 映射、网络失败降级、超限 state 拒绝。
 - `tests/unit/route.test.ts`：控制台/QQ/未知 World/多来源路由与目标。
 - `tests/unit/retrieve.test.ts`：查询构造、相关召回、abstain、写入去重、显式候选审计。
-- `tests/integration/persona.test.ts`：私聊回复路由、群聊语义沉默、内部通知不触发决策、静态前缀。
+- `tests/integration/persona.test.ts`：私聊回复路由、群聊语义沉默、内部通知不触发决策、静态前缀、异步记忆回执。
+- `tests/integration/http-services.test.ts`：真实本地 HTTP 下的 SystemOne / embeddings / rerank 形状。
+- `tests/unit/jsonl.test.ts`、`tests/unit/vector.test.ts`：JSONL 降级持久化与可选 sqlite-vec KNN。
 
 ## 待补
 

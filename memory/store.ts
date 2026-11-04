@@ -275,6 +275,7 @@ export class JsonlMemoryStore implements MemoryStore {
   forget(id: string, mode: 'soft' | 'hard'): boolean {
     const r = this.records.get(id);
     if (!r) return false;
+    if (mode === 'hard' && r.kind === 'identity') mode = 'soft';
     if (mode === 'hard') {
       this.records.delete(id);
       this.vectors.delete(id);

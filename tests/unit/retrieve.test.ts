@@ -81,6 +81,18 @@ describe('write pipeline', () => {
     store.close();
   });
 
+  it('puts identity candidates in the review queue instead of writing them', async () => {
+    const store = new SqliteMemoryStore({ path: ':memory:', dim: 16, vectors: false });
+    const decision = new DecisionPlane({ client: null, timeoutMs: 100, confidenceThreshold: 0.5 });
+    const result = await writeCandidate(candidate({ kind: 'identity', title: '我是谁', content: '我把自己当作一个会犹豫的人。' }), {
+      store, decision, warmLimit: 5000,
+    });
+    expect(result.decision.op).toBe('defer');
+    expect(store.stats().active).toBe(0);
+    expect(store.getState<unknown[]>('identity:pending')).toHaveLength(1);
+    store.close();
+  });
+
   it('keeps explicit candidates in the audit when skipped', async () => {
     const store = new SqliteMemoryStore({ path: ':memory:', dim: 16, vectors: false });
     const decision = new DecisionPlane({ client: null, timeoutMs: 100, confidenceThreshold: 0.5 });
