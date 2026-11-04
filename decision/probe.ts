@@ -27,6 +27,7 @@ function joinUrl(baseUrl: string, path: string): string {
 export async function probeService(opts: ServiceProbeOptions): Promise<ServiceProbeResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 1500);
+  timer.unref?.();
   try {
     const f = opts.fetch ?? globalThis.fetch;
     const res = await f(joinUrl(opts.baseUrl, '/health'), {

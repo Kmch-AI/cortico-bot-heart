@@ -183,7 +183,7 @@ export class HeartPersona implements Persona {
       core: () => this.core,
       store: this.store,
       decision: this.decision,
-      embedding: this.embedding,
+      embedding: cfg.memory.autoEmbedding ? this.embedding : null,
       queueLimit: cfg.worker.queueLimit,
       timeoutMs: cfg.worker.timeoutMs,
       warmLimit: cfg.memory.warmLimit,
@@ -327,11 +327,12 @@ export class HeartPersona implements Persona {
         cursor: event.cursor,
         type: event.type,
         source: event.source,
-        text: event.text,
+        text: event.text.slice(0, 4000),
         ts: event.ts,
         senderKey: event.senderKey,
       });
     }
+    if (this.pendingEvents.length > 200) this.pendingEvents.splice(0, this.pendingEvents.length - 200);
     const addressed = isAddressed(incoming, cfg.identity.displayName);
     this.attention.observe({
       text,
@@ -850,7 +851,8 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
   try {
     return await Promise.race([
       promise,
-      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(200, timeoutMs)); }),
+      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(200, timeoutMs));
+        timer.unref?.(); }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);

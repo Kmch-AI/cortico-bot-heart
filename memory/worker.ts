@@ -238,7 +238,7 @@ function buildMessages(packet: MemoryPacket): ContextRecord[] {
     eventLines || '(无)',
     '',
     '助手输出：',
-    packet.assistant?.trim() || '(无)',
+    (packet.assistant?.trim() || '(无)').slice(0, 4000),
     '',
     '调用 memory_propose 提交 ops。',
   ].join('\n');
@@ -330,7 +330,8 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
   try {
     return await Promise.race([
       promise,
-      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(1000, timeoutMs)); }),
+      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(1000, timeoutMs));
+        timer.unref?.(); }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);

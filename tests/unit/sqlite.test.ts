@@ -25,6 +25,8 @@ describe('SqliteMemoryStore', () => {
 
     const hits = store.search({ text: '美式', limit: 5 });
     expect(hits.some((h) => h.record.id === record!.id)).toBe(true);
+    // 2 字中文查询走 LIKE 兜底，不依赖 trigram。
+    expect(store.search({ text: '美式', limit: 5 }).length).toBeGreaterThan(0);
 
     // 完全相同的内容再写入一次：不新增，只更新置信度/证据。
     const again = store.apply([{ op: 'create', candidate: candidate({ confidence: 0.9 }) }]);

@@ -37,6 +37,7 @@ async function postJson(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+    timer.unref?.();
   try {
     const f = opts.fetch ?? globalThis.fetch;
     return await f(joinUrl(opts.baseUrl, path), {

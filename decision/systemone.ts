@@ -97,6 +97,7 @@ export class SystemOneClient {
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
+      timer.unref?.();
       try {
         const f = this.opts.fetch ?? globalThis.fetch;
         const res = await f(joinUrl(this.opts.baseUrl, '/v1/systemone'), {
@@ -112,7 +113,6 @@ export class SystemOneClient {
           const text = await res.text().catch(() => '');
           const err = new SystemOneError('http', `SystemOne HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`, res.status);
           if (res.status >= 500 && attempt === 0) { lastError = err; continue; }
-          this.recordFailure();
           throw err;
         }
         const parsed = parseResponse(await res.json());

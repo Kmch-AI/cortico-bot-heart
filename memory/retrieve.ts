@@ -88,7 +88,7 @@ export async function retrieveMemories(input: QueryInput, opts: RetrievalOptions
     scope: input.scope,
     limit: Math.max(opts.topK * 6, 30),
     now: new Date(),
-  });
+  }).filter((hit) => hit.record.kind !== 'identity'); // identity 已在稳定前缀里，避免重复占预算。
   if (hits.length === 0) return { cards: [], records: [], query, tokenEstimate: 0, degraded, trace: [...trace, 'no hits'] };
 
   let ranked = [...hits];
