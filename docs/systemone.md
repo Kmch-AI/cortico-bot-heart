@@ -65,7 +65,7 @@ heart 直接使用数值并四舍五入到最近等级。
 
 ## 客户端
 
-- 统一超时：`decision.timeoutMs`（默认 2s）同时用于 `turn_plan`、`appraise` 与后台决策；不再有独立的对话超时。
+- 统一超时：`decision.timeoutMs`（默认 6s）同时用于 `turn_plan`、`appraise` 与后台决策；不再有独立的对话超时。
 - `turn_plan` 与 `appraise` 同时发起，不再一前一后；回复只等 `turn_plan`，`appraise` 完成后更新心情/关系。两者都只尝试一次。超时已经用完整段预算，不再重试；后台的 5xx/网络错误仍按 attempts 重试。
 - state 预算：`turn_plan` state 估算上限 500 tokens；超了先删旧 `recent`，再删 `hot`，最后截 `events`，不静默塞满上下文。
 - 字段推导：模型只回答 action/intent/stance/length/voice；addressed 来自输入标志，directness/depth/playfulness/needsArbiter 由 mood、意图与输入推导。`appraise` 的 importance 由关系变化幅度推导。

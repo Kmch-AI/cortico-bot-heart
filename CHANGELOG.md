@@ -2,7 +2,7 @@
 
 ## 0.1.10
 
-- 撤销 0.1.9 的独立对话预算：删除 `decision.interactiveTimeoutMs`，`turn_plan`、`appraise` 与后台决策共用 `decision.timeoutMs`；超时不再重试，避免一次超时变成两倍等待。
+- 撤销 0.1.9 的独立对话预算：删除 `decision.interactiveTimeoutMs`，`turn_plan`、`appraise` 与后台决策共用 `decision.timeoutMs`（默认 6s）；超时不再重试，避免一次超时变成两倍等待。
 - `turn_plan` 与 `appraise` 同时发起，不再一前一后；回复只等 `turn_plan`，`appraise` 完成后更新心情/关系。
 - `turn_plan` 从 10 问缩到 5 问：`action` / `intent` / `stance` / `length` / `voice`；没有语音出口或用户明确要求语音时省略 `voice`。`addressed` 来自输入标志，`directness` / `depth` / `playfulness` / `needsArbiter` 由 mood、意图和输入推导。
 - `appraise` 从 6 问缩到 5 问：`valence` / `arousal` / `energy` / `tension` / `relationship_delta`；`importance` 由关系变化幅度推导。

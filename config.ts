@@ -103,7 +103,7 @@ export const HEART_DEFAULTS: HeartConfig = {
     serviceUrl: 'http://127.0.0.1:9883',
     tokenSecret: 'CORTICO_SERVICE_TOKEN',
     systemoneModel: 'jev-latest',
-    timeoutMs: 2000,
+    timeoutMs: 6000,
     fallbackToMain: true,
     confidenceThreshold: 0.55,
   },
