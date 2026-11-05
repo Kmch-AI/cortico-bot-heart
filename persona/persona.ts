@@ -303,9 +303,8 @@ export class HeartPersona implements Persona {
     const out: ToolDef[] = [];
     for (const world of this.opts.worlds) {
       try {
-        const tools = world.tools();
-        // 控制台回复直接输出正文；console_send 只用于主动广播，heart 不暴露，避免模型把回复发成工具调用。
-        out.push(...(world.id === 'console' ? tools.filter((t) => t.name !== 'console_send') : tools));
+        // console_send 保留给其他来源主动向控制台广播；控制台来源的回复靠 delivery/PREFIX 约束为正文直出。
+        out.push(...world.tools());
       } catch { /* 单个 World 失败不拖垮工具表 */ }
     }
     return out;
@@ -399,20 +398,27 @@ export class HeartPersona implements Persona {
         familiarity: relationship.familiarity, trust: relationship.trust,
         intimacy: relationship.intimacy, tension: relationship.tension, status: relationship.status,
       },
-      hot: this.store.hot(6).map((r) => `${r.title}: ${r.content}`),
-      delivery: formatDeliveryPlan(route),
+      hot: this.store.hot(3).map((r) => `${r.title}: ${r.content}`),
+      delivery: {
+        source: route.source,
+        ...(route.target ? { target: route.target } : {}),
+        text: route.text,
+        voice: route.voice ?? 'none',
+      },
       input,
     });
 
-    // 只有 turn_plan 在热路径上等待；appraise 只影响心情/关系，放到后台，不挡住回复。
+    // 两个任务同时发起，共用 decision.timeoutMs。回复只等 turn_plan；appraise 稍后落到心情/关系，
+    // 不参与这一句的生成，所以不必把它的延迟加进回复路径。
+    const appraisePromise = this.decision.appraise(text.slice(-1600), {
+      mood: { valence: mood.valence, energy: mood.energy, tension: mood.tension },
+      relationship: { familiarity: relationship.familiarity, trust: relationship.trust },
+    });
     const decided = await this.decision.plan(input, state);
     const plan = decided.plan;
     this.lastTrace = decided.trace;
     this.trace(decided.trace);
-    void this.decision.appraise(text, {
-      mood: { valence: mood.valence, energy: mood.energy, tension: mood.tension },
-      relationship: { familiarity: relationship.familiarity, trust: relationship.trust },
-    }).then((appraisal) => {
+    void appraisePromise.then((appraisal) => {
       if (!appraisal || this.shutdownDone) return;
       this.mood.appraise(appraisal, last.cursor != null ? String(last.cursor) : undefined, new Date());
       this.relationship.update(scope, {
@@ -450,6 +456,9 @@ export class HeartPersona implements Persona {
     } else if (plan.action !== 'respond') {
       // 沉默/暂缓批次不会真的发语音，不能消耗冷却。
       plan.voice = false;
+    } else {
+      // 显式请求可能绕过了模型 voice 问；门放行后同步回 plan，提示词才会要求发语音。
+      plan.voice = true;
     }
 
     this.lastPlan = plan;
@@ -866,8 +875,8 @@ ${chosen.text}`, 'arbiter');
     const snapshot = this.core?.sessionInfo(MAIN).snapshot ?? [];
     return snapshot
       .filter((r) => r.item.type === 'message' && (r.item.role === 'user' || r.item.role === 'assistant'))
-      .slice(-8)
-      .map((r) => `${r.item.type === 'message' ? r.item.role : ''}: ${itemText(r.item).slice(0, 400)}`)
+      .slice(-6)
+      .map((r) => `${r.item.type === 'message' ? r.item.role : ''}: ${itemText(r.item).slice(0, 240)}`)
       .join('\n');
   }
 
@@ -979,7 +988,6 @@ ${chosen.text}`, 'arbiter');
     return new DecisionPlane({
       client,
       timeoutMs: cfg.decision.timeoutMs,
-      interactiveTimeoutMs: cfg.decision.interactiveTimeoutMs,
       confidenceThreshold: cfg.decision.confidenceThreshold,
       onTrace: (trace) => this.trace(trace),
     });

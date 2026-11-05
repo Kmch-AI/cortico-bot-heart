@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.10
+
+- 撤销 0.1.9 的独立对话预算：删除 `decision.interactiveTimeoutMs`，`turn_plan`、`appraise` 与后台决策共用 `decision.timeoutMs`；超时不再重试，避免一次超时变成两倍等待。
+- `turn_plan` 与 `appraise` 同时发起，不再一前一后；回复只等 `turn_plan`，`appraise` 完成后更新心情/关系。
+- `turn_plan` 从 10 问缩到 5 问：`action` / `intent` / `stance` / `length` / `voice`；没有语音出口或用户明确要求语音时省略 `voice`。`addressed` 来自输入标志，`directness` / `depth` / `playfulness` / `needsArbiter` 由 mood、意图和输入推导。
+- `appraise` 从 6 问缩到 5 问：`valence` / `arousal` / `energy` / `tension` / `relationship_delta`；`importance` 由关系变化幅度推导。
+- `turn_plan` state 改为压缩结构，约 500 tokens 估算预算；超限先删旧 `recent`、`hot`，最后截 `events`。
+- 恢复 `console_send`：它只用于其他来源向控制台广播；控制台来源仍要求正文直出。显式语音请求在语音门中优先于模型的 `voice` 判断。
+
 ## 0.1.9
 
 - 对话热路径不再等待 SystemOne 的后台超时：新增 `decision.interactiveTimeoutMs`（默认 1.2s），`turn_plan` 只尝试一次，超时立即启发式。

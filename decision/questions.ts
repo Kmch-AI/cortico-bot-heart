@@ -16,8 +16,10 @@ import type { TurnPlanInput } from '../output/turnPlan.ts';
 /** score 的等级描述；Jev 要求最低级在前的数组，不是 legend 映射。 */
 const levels = (...labels: string[]): string[] => labels;
 
-export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
-  return {
+export function turnPlanQuestions(
+  input?: Pick<TurnPlanInput, 'voiceAvailable' | 'explicitVoiceRequested'>,
+): Record<string, SystemOneQuestion> {
+  const questions: Record<string, SystemOneQuestion> = {
     action: {
       type: 'choice',
       instructions: '这一批事件应该怎么处理？目标是选择这个人此刻想不想接话，不是最大化用户满意度。',
@@ -27,9 +29,6 @@ export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
         defer: '稍后再说：需要新信息，或现在不适合接，但不想永久忽略',
       },
     },
-    addressed: { type: 'noul', instructions: '这句话是对我说的吗？包括被 @、引用、私聊、直接提问。' },
-    voice: { type: 'noul', instructions: '这一句适合发语音吗？只判断发不发；发到哪里由来源决定。默认保守，群聊尤其如此。' },
-    needs_arbiter: { type: 'noul', instructions: '这个回合说错代价高、立场微妙或表达难，值得先生成候选再选吗？' },
     intent: {
       type: 'choice',
       instructions: '这句话主要想做什么？',
@@ -55,55 +54,105 @@ export function turnPlanQuestions(): Record<string, SystemOneQuestion> {
       instructions: '我的立场是什么？不是对方希望我站哪边。',
       criteria: { agree: '认同', disagree: '不认同', neutral: '中立', unsure: '不确定', deflect: '不想表态' },
     },
-    depth: {
-      type: 'score',
-      instructions: '这句话需要多少认知投入？不等于长度。',
-      criteria: levels('自动反应', '浅层', '一般', '深度', '严谨推理'),
-    },
     length: {
       type: 'choice',
       instructions: '期望长度。',
       criteria: { short: '一两句', medium: '一小段', long: '展开说' },
     },
-    directness: {
-      type: 'choice',
-      instructions: '表达直接程度。',
-      criteria: { indirect: '含蓄/留白', neutral: '正常', direct: '直接说' },
-    },
-    playfulness: {
-      type: 'score',
-      instructions: '玩笑/调侃强度。',
-      criteria: levels('无', '很轻', '适中', '明显', '很强'),
-    },
   };
+  // 没有语音出口，或用户已经明确要语音时，这一问没有信息量；显式请求由语音门直接放行。
+  if (input?.voiceAvailable !== false && input?.explicitVoiceRequested !== true) {
+    questions.voice = { type: 'noul', instructions: '这一句适合发语音吗？只判断发不发；发到哪里由来源决定。默认保守，群聊尤其如此。' };
+  }
+  return questions;
+}
+
+export interface DecisionDelivery {
+  source: string;
+  target?: string;
+  text: string;
+  voice: string;
+}
+
+/** 与 continuity 的即时评估同一思路：state 有硬预算，超了先删旧材料，不静默塞满上下文。 */
+export const TURN_PLAN_STATE_BUDGET = 500;
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+function clipHead(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function clipTail(text: string, max: number): string {
+  return text.length > max ? text.slice(-max) : text;
+}
+
+export function estimateDecisionTokens(value: unknown): number {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  let estimate = 0;
+  for (const char of text ?? '') {
+    estimate += /[㐀-鿿]/u.test(char) ? 0.6 : /[\x00-\x7f]/u.test(char) ? 0.3 : 1;
+  }
+  return estimate;
 }
 
 export function turnPlanState(input: {
   eventSummary: string;
   recent: string;
-  mood: unknown;
-  relationship: unknown;
+  mood: {
+    valence: number; arousal: number; energy: number; tension: number;
+    openness: number; patience: number; playfulness: number; label: string;
+  };
+  relationship: { familiarity: number; trust: number; intimacy: number; tension: number; status: string };
   hot: string[];
-  delivery: string;
+  delivery: DecisionDelivery;
   input: TurnPlanInput;
 }): unknown {
-  return {
-    events: input.eventSummary,
-    recent: input.recent,
-    mood: input.mood,
-    relationship: input.relationship,
-    hot: input.hot,
+  const state = {
+    events: clipTail(input.eventSummary, 340),
+    recent: clipTail(input.recent, 220),
+    mood: {
+      v: round2(input.mood.valence),
+      a: round2(input.mood.arousal),
+      e: round2(input.mood.energy),
+      t: round2(input.mood.tension),
+      o: round2(input.mood.openness),
+      p: round2(input.mood.patience),
+      play: round2(input.mood.playfulness),
+      label: input.mood.label,
+    },
+    relationship: {
+      fam: round2(input.relationship.familiarity),
+      trust: round2(input.relationship.trust),
+      int: round2(input.relationship.intimacy),
+      ten: round2(input.relationship.tension),
+      status: input.relationship.status,
+    },
+    hot: input.hot.slice(0, 2).map((text) => clipHead(text, 100)),
     delivery: input.delivery,
     flags: {
       addressed: input.input.addressed,
       private: input.input.isPrivate,
       mentioned: input.input.mentioned,
-      voiceAvailable: input.input.voiceAvailable ?? false,
-      explicitVoiceRequested: input.input.explicitVoiceRequested ?? false,
-      explicitMemoryRequested: input.input.explicitMemoryRequested ?? false,
+      voice: input.input.voiceAvailable ?? false,
+      explicitVoice: input.input.explicitVoiceRequested ?? false,
+      explicitMemory: input.input.explicitMemoryRequested ?? false,
     },
   };
+  if (estimateDecisionTokens(state) <= TURN_PLAN_STATE_BUDGET) return state;
+  const lines = state.recent.split('\n');
+  while (lines.length > 1 && estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) {
+    lines.shift();
+    state.recent = lines.join('\n');
+  }
+  while (state.hot.length > 1 && estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) state.hot.shift();
+  if (estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) state.events = clipTail(state.events, 260);
+  if (estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) state.recent = clipTail(state.recent, 120);
+  if (estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) state.hot = state.hot.slice(0, 1);
+  if (estimateDecisionTokens(state) > TURN_PLAN_STATE_BUDGET) state.events = clipTail(state.events, 180);
+  return state;
 }
+
 
 export function appraiseQuestions(): Record<string, SystemOneQuestion> {
   return {
@@ -115,7 +164,6 @@ export function appraiseQuestions(): Record<string, SystemOneQuestion> {
     arousal: { type: 'score', instructions: '激活/激动程度。', criteria: levels('很低', '低', '中', '高', '很高') },
     energy: { type: 'score', instructions: '社交/认知能量变化。', criteria: levels('耗尽', '低', '中', '高', '充沛') },
     tension: { type: 'score', instructions: '紧张/防备程度。', criteria: levels('放松', '轻', '中', '紧', '很紧') },
-    importance: { type: 'score', instructions: '这件事对关系/目标有多重要？', criteria: levels('无关', '轻', '中', '重要', '很重要') },
     relationship_delta: {
       type: 'score',
       instructions: '这件事让关系变近还是变远？',
@@ -163,14 +211,19 @@ export function memoryWriteQuestions(
 
 export function parseAppraisal(answers: Record<string, SystemOneAnswer>): Appraisal {
   const score = (id: string, fallback: number): number => scoreValue(answers[id], fallback);
+  const relationshipDelta = score('relationship_delta', 0.5) * 2 - 1;
+  // importance 不再单独提问：关系变化越大越重要；保留对旧回答的兼容。
+  const importance = answers.importance
+    ? score('importance', 0.4)
+    : Math.max(0, Math.min(1, 0.35 + Math.abs(relationshipDelta) * 0.5));
   return {
     valence: score('valence', 0.5) * 2 - 1,
     arousal: score('arousal', 0.5),
     energy: score('energy', 0.5),
     tension: score('tension', 0.3),
-    importance: score('importance', 0.4),
-    relationshipDelta: score('relationship_delta', 0.5) * 2 - 1,
-    reason: `systemone appraisal: valence=${score('valence', 0.5).toFixed(2)}, importance=${score('importance', 0.4).toFixed(2)}`,
+    importance,
+    relationshipDelta,
+    reason: `systemone appraisal: valence=${score('valence', 0.5).toFixed(2)}, importance=${importance.toFixed(2)}${answers.importance ? '' : ' (derived)'}`,
   };
 }
 

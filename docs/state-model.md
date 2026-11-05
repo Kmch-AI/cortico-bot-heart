@@ -11,7 +11,7 @@ mood' = clamp(baseline + inertia * (mood - baseline) + impulse)
 ```
 
 - 默认 `inertia=0.85`；半衰期 60 分钟，只负责向 baseline 回落。
-- `appraise` 由 SystemOne 的 score 或启发式给出，维度：愉悦、激活、能量、紧张、重要度、关系变化。
+- `appraise` 由 SystemOne 的 score 或启发式给出，维度：愉悦、激活、能量、紧张、关系变化；重要度由关系变化幅度推导。
 - 只在有意义的事件后更新；不按 token 或每句话更新。
 - 极端值有 clamp；一次互动不会永久改人。
 - `label` 是确定性映射，不是模型生成。

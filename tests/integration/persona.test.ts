@@ -153,11 +153,23 @@ describe('HeartPersona integration', () => {
     persona.shutdown();
   });
 
-  it('does not expose console_send as a reply tool', () => {
+  it('keeps console_send for cross-source broadcasts', () => {
     const { persona } = makePersona();
     const tools = persona.declareSessions()[0]!.tools();
-    expect(tools.some((t) => t.name === 'console_send')).toBe(false);
+    expect(tools.some((t) => t.name === 'console_send')).toBe(true);
     expect(tools.some((t) => t.name === 'console_notice')).toBe(true);
+    persona.shutdown();
+  });
+
+  it('routes console batches as direct text, not console_send replies', async () => {
+    const { persona } = makePersona();
+    await persona.onDelivery({
+      events: [event({ source: 'console', type: 'console.message', origin: 'internal', text: '你好' })],
+    });
+    const head = JSON.stringify(persona.sessionHead());
+    expect(head).toContain('直接输出回复正文');
+    expect(head).toContain('console_send 只用于其他来源');
+    persona.onBatchEnd();
     persona.shutdown();
   });
 

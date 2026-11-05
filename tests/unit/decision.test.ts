@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SystemOneClient } from '../../decision/systemone.ts';
 import { SystemOneError } from '../../decision/types.ts';
 import { DecisionPlane } from '../../decision/fallback.ts';
+import { TURN_PLAN_STATE_BUDGET, estimateDecisionTokens, turnPlanQuestions, turnPlanState } from '../../decision/questions.ts';
 import type { TurnPlanInput } from '../../output/turnPlan.ts';
 import { testConfig } from '../helpers.ts';
 
@@ -21,7 +22,7 @@ function response(answers: Record<string, unknown>): Response {
 
 describe('SystemOne client and decision plane', () => {
   it('parses typed answers into a turn plan', async () => {
-    let sent: { questions?: Record<string, { criteria?: unknown; legend?: unknown }> } | undefined;
+    let sent: { state?: unknown; questions?: Record<string, { criteria?: unknown; legend?: unknown }> } | undefined;
     const fakeFetch: typeof globalThis.fetch = async (_input, init) => {
       sent = JSON.parse(String(init?.body ?? '{}'));
       return response({
@@ -46,9 +47,32 @@ describe('SystemOne client and decision plane', () => {
     expect(plan.cognitiveDepth).toBe('L2');
     expect(plan.length).toBe('short');
     expect(plan.confidence).toBeCloseTo(0.82, 2);
-    // score 问题必须发 criteria 数组；legend 是旧格式，会被上游 422。
-    expect(sent?.questions?.depth?.criteria).toEqual(['自动反应', '浅层', '一般', '深度', '严谨推理']);
-    expect(sent?.questions?.depth?.legend).toBeUndefined();
+    // 只问核心语义；其余字段由答案和状态推导。
+    expect(Object.keys(sent?.questions ?? {}).sort()).toEqual(['action', 'intent', 'length', 'stance', 'voice']);
+    expect(sent?.questions?.depth).toBeUndefined();
+    expect(sent?.questions?.addressed).toBeUndefined();
+    expect(sent?.questions?.needs_arbiter).toBeUndefined();
+    expect(JSON.stringify(sent?.state).length).toBeLessThan(4000);
+  });
+
+  it('asks five appraisal scores and derives importance', async () => {
+    let sent: { questions?: Record<string, { criteria?: unknown }> } | undefined;
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      sent = JSON.parse(String(init?.body ?? '{}'));
+      return response({
+        valence: { type: 'score', score: 3, confidence: 0.7, legend: {}, probabilities: {} },
+        arousal: { type: 'score', score: 2, confidence: 0.7, legend: {}, probabilities: {} },
+        energy: { type: 'score', score: 2, confidence: 0.7, legend: {}, probabilities: {} },
+        tension: { type: 'score', score: 1, confidence: 0.7, legend: {}, probabilities: {} },
+        relationship_delta: { type: 'score', score: 4, confidence: 0.7, legend: {}, probabilities: {} },
+      });
+    };
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const appraisal = await plane.appraise('hi', { mood: { valence: 0.1, energy: 0.6, tension: 0.2 }, relationship: { familiarity: 0.5, trust: 0.5 } });
+    expect(Object.keys(sent?.questions ?? {}).sort()).toEqual(['arousal', 'energy', 'relationship_delta', 'tension', 'valence']);
+    expect(sent?.questions?.valence?.criteria).toEqual(['很不悦', '不悦', '中性', '愉悦', '很愉悦']);
+    expect(appraisal?.importance).toBeGreaterThan(0.35);
   });
 
   it('maps a fractional expected score to the nearest level', async () => {
@@ -93,7 +117,7 @@ describe('SystemOne client and decision plane', () => {
     expect(trace.error).toContain('network');
   });
 
-  it('uses the interactive budget with one attempt on the turn-plan path', async () => {
+  it('uses the shared timeout with one attempt on the turn-plan path', async () => {
     let calls = 0;
     const fetch: typeof globalThis.fetch = async (_input, init) => {
       calls++;
@@ -105,11 +129,10 @@ describe('SystemOne client and decision plane', () => {
         });
       });
     };
-    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 5000, fetch });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 100, fetch });
     const plane = new DecisionPlane({
       client,
-      timeoutMs: 5000,
-      interactiveTimeoutMs: 100,
+      timeoutMs: 100,
       confidenceThreshold: 0.5,
     });
     const started = Date.now();
@@ -119,6 +142,25 @@ describe('SystemOne client and decision plane', () => {
     expect(trace.error).toContain('timeout');
     expect(calls).toBe(1);
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('omits the voice question when there is no voice outlet or the user asked explicitly', () => {
+    expect(Object.keys(turnPlanQuestions({ voiceAvailable: false })).sort()).toEqual(['action', 'intent', 'length', 'stance']);
+    expect(Object.keys(turnPlanQuestions({ voiceAvailable: true, explicitVoiceRequested: true })).sort()).toEqual(['action', 'intent', 'length', 'stance']);
+    expect(Object.keys(turnPlanQuestions({ voiceAvailable: true })).sort()).toContain('voice');
+  });
+
+  it('keeps the turn-plan state inside its token budget', () => {
+    const state = turnPlanState({
+      eventSummary: '长消息'.repeat(2000),
+      recent: Array.from({ length: 12 }, () => '最近对话内容'.repeat(80)).join('\n'),
+      mood: { valence: 0.1, arousal: 0.3, energy: 0.6, tension: 0.2, openness: 0.6, patience: 0.6, playfulness: 0.3, label: '平静' },
+      relationship: { familiarity: 0.5, trust: 0.5, intimacy: 0.3, tension: 0.1, status: 'friendly' },
+      hot: ['记忆'.repeat(200), '另一条'.repeat(200), '第三条'.repeat(200), '第四条'.repeat(200)],
+      delivery: { source: 'qq', target: 'private:1', text: 'qq', voice: 'qq' },
+      input,
+    });
+    expect(estimateDecisionTokens(state)).toBeLessThanOrEqual(TURN_PLAN_STATE_BUDGET);
   });
 
   it('rejects oversized state before sending', async () => {
@@ -136,7 +178,6 @@ describe('SystemOne client and decision plane', () => {
     const cfg = testConfig();
     expect(cfg.mood.inertia).toBeGreaterThan(0);
     expect(cfg.decision.timeoutMs).toBeGreaterThan(0);
-    expect(cfg.decision.interactiveTimeoutMs).toBeGreaterThan(0);
-    expect(cfg.decision.interactiveTimeoutMs).toBeLessThanOrEqual(cfg.decision.timeoutMs);
+    expect('interactiveTimeoutMs' in cfg.decision).toBe(false);
   });
 });

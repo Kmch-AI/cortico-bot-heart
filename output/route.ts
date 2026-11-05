@@ -122,7 +122,7 @@ export class ChannelRouter {
 }
 
 export function formatDeliveryPlan(plan: DeliveryPlan): string {
-  const text = plan.text === 'console-direct' ? '直接在控制台输出正文（不要调用 console_send）'
+  const text = plan.text === 'console-direct' ? '直接输出回复正文；console_send 只用于其他来源向控制台广播'
     : plan.text === 'qq' ? 'qq_draft → qq_confirm'
       : plan.text === 'world-tool' ? '调用该 World 的 speak 工具'
         : '没有文字出口，本回合不要发送';

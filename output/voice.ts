@@ -26,13 +26,13 @@ export interface VoiceGateResult {
  */
 export function gateVoice(input: VoiceGateInput): VoiceGateResult {
   const { plan, route, cfg } = input;
-  if (!plan.voice) return { send: false, reason: 'decision: no voice' };
   if (!cfg.enabled) return { send: false, reason: 'config: voice disabled' };
   if (!route.voiceAvailable) return { send: false, reason: 'route: voice_unsupported' };
   if (cfg.maxPerTurns > 0 && input.turnsSinceVoice !== null && input.turnsSinceVoice < cfg.maxPerTurns) {
     return { send: false, reason: `rate: last voice ${input.turnsSinceVoice} turns ago` };
   }
   if (input.explicitRequested) return { send: true, reason: 'explicit request' };
+  if (!plan.voice) return { send: false, reason: 'decision: no voice' };
   if (input.isPrivate) {
     return { send: input.emotionalIntensity >= 0.25, reason: input.emotionalIntensity >= 0.25 ? 'private + affect' : 'private but low affect' };
   }

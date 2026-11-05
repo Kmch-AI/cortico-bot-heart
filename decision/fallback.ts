@@ -34,10 +34,8 @@ export interface DecisionTrace {
 
 export interface DecisionPlaneOptions {
   client: SystemOneClient | null;
-  /** 后台决策的超时。 */
+  /** 所有 SystemOne 请求共用的超时。 */
   timeoutMs: number;
-  /** 对话热路径（turn_plan / appraise）的预算；超时一次就降级。 */
-  interactiveTimeoutMs?: number;
   confidenceThreshold: number;
   onTrace?: (trace: DecisionTrace) => void;
   now?: () => number;
@@ -62,13 +60,14 @@ export class DecisionPlane {
       return { plan, trace: this.trace('turn_plan', 'heuristic', start, plan.confidence, 'no client') };
     }
     try {
-      const response = await this.opts.client.ask({ state, questions: turnPlanQuestions() }, this.interactiveTimeout(), 1);
+      const response = await this.opts.client.ask({ state, questions: turnPlanQuestions(input) }, this.opts.timeoutMs, 1);
       const plan = parseTurnPlan(response.answers as Record<string, SystemOneAnswer>, input);
       // 低置信度的“回应”在非点名/非私聊场景回退为观察；不让一次模糊判断硬接话。
       if (plan.action === 'respond' && plan.confidence < this.opts.confidenceThreshold && !input.addressed && !input.isPrivate) {
         plan.action = 'silence';
         plan.reason += ' (low confidence -> silence)';
       }
+      plan.needsArbiter = plan.needsArbiter || this.needsArbiter(plan, input);
       return { plan, trace: this.trace('turn_plan', 'systemone', start, plan.confidence, plan.reason) };
     } catch (err) {
       const plan = heuristicTurnPlan(input);
@@ -82,7 +81,7 @@ export class DecisionPlane {
     if (!this.opts.client) return null;
     const start = this.now();
     try {
-      const response = await this.opts.client.ask({ state: { text, ...(state as object) }, questions: appraiseQuestions() }, this.interactiveTimeout(), 1);
+      const response = await this.opts.client.ask({ state: { text, ...(state as object) }, questions: appraiseQuestions() }, this.opts.timeoutMs, 1);
       const appraisal = parseAppraisal(response.answers as Record<string, SystemOneAnswer>);
       this.emit(this.trace('appraise', 'systemone', start, undefined, appraisal.reason));
       return appraisal;
@@ -164,8 +163,12 @@ export class DecisionPlane {
     return this.opts.now?.() ?? Date.now();
   }
 
-  private interactiveTimeout(): number {
-    return Math.max(100, Math.min(this.opts.timeoutMs, this.opts.interactiveTimeoutMs ?? this.opts.timeoutMs));
+  /** 需要候选仲裁的回合：高 stakes，或低置信度的直接对话。 */
+  private needsArbiter(plan: TurnPlan, input: TurnPlanInput): boolean {
+    if (plan.action !== 'respond') return false;
+    if (['challenge', 'refuse', 'correct'].includes(plan.intent)) return true;
+    if (input.mood.tension > 0.65 || input.relationship.tension > 0.5) return true;
+    return plan.confidence < this.opts.confidenceThreshold && (input.addressed || input.isPrivate);
   }
 }
 

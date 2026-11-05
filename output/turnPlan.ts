@@ -57,6 +57,50 @@ const DIRECTNESS: readonly Directness[] = ['indirect', 'neutral', 'direct'];
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
+const HIGH_STAKES_INTENTS: readonly CommunicativeIntent[] = ['challenge', 'refuse', 'correct'];
+const REFLECTIVE_INTENTS: readonly CommunicativeIntent[] = ['explain', 'suggest', 'probe'];
+
+/**
+ * 只由模型回答核心语义问题；长度、深度、直接度、玩心由 mood/意图/输入推导。
+ * 这些字段是表达约束，不是剧本，宁可保守也不要再为它们多发 question。
+ */
+export function deriveTurnStyle(
+  input: TurnPlanInput,
+  intent: CommunicativeIntent,
+  stance: Stance,
+): Pick<TurnPlan, 'length' | 'directness' | 'cognitiveDepth' | 'playfulness'> {
+  const tired = input.mood.energy < 0.3;
+  const tense = input.mood.tension > 0.65;
+  const question = /[?？]|吗|呢|怎么|为什么|如何|帮我|请问/.test(input.text);
+  const highStakes = HIGH_STAKES_INTENTS.includes(intent);
+
+  let length: ExpectedLength = 'short';
+  if (REFLECTIVE_INTENTS.includes(intent) || intent === 'empathize') length = 'medium';
+  if (intent === 'share' && !tired) length = 'medium';
+  if (highStakes && !tense) length = 'medium';
+  if (intent === 'explain' && input.mood.energy > 0.7) length = 'long';
+  if (tired || tense) length = 'short';
+
+  const directness: Directness = highStakes ? 'direct'
+    : intent === 'avoid' || intent === 'close' || stance === 'deflect' ? 'indirect'
+      : 'neutral';
+
+  const cognitiveDepth: CognitiveDepth = tired ? (question ? 'L1' : 'L0')
+    : intent === 'explain' || intent === 'suggest'
+      ? (length === 'long' ? 'L3' : 'L2')
+      : highStakes ? 'L2'
+        : REFLECTIVE_INTENTS.includes(intent) || intent === 'share' || intent === 'empathize' ? 'L1'
+          : question ? 'L2' : 'L1';
+
+  const playfulness = clamp01(
+    intent === 'tease' || intent === 'perform' ? Math.max(0.55, input.mood.playfulness)
+      : highStakes ? Math.min(0.2, input.mood.playfulness)
+        : input.mood.playfulness * (tense ? 0.4 : 1),
+  );
+
+  return { length, directness, cognitiveDepth, playfulness };
+}
+
 function choiceOf(answer: SystemOneAnswer | undefined, fallback: string): string {
   if (!answer || answer.type !== 'choice') return fallback;
   return answer.choice || fallback;
@@ -85,8 +129,7 @@ export function heuristicTurnPlan(input: TurnPlanInput): TurnPlan {
   const confidence = direct ? 0.72 : action === 'respond' ? 0.55 : 0.58;
   const intent: CommunicativeIntent = question ? 'acknowledge' : input.mood.playfulness > 0.55 ? 'tease' : 'share';
   const stance: Stance = tense || lowPatience ? 'deflect' : 'neutral';
-  const depth: CognitiveDepth = question ? (tired ? 'L1' : 'L2') : (tired ? 'L0' : 'L1');
-  const length: ExpectedLength = tired || tense ? 'short' : question ? 'medium' : 'short';
+  const style = deriveTurnStyle(input, intent, stance);
   return {
     action,
     confidence,
@@ -96,10 +139,7 @@ export function heuristicTurnPlan(input: TurnPlanInput): TurnPlan {
     reason: `heuristic: ${direct ? 'direct/private' : 'ambient'}, energy=${input.mood.energy.toFixed(2)}, question=${question}`,
     intent,
     stance,
-    cognitiveDepth: depth,
-    length,
-    directness: direct ? 'neutral' : 'indirect',
-    playfulness: clamp01(input.mood.playfulness * (tense ? 0.4 : 1)),
+    ...style,
     voice: false,
     needsArbiter: false,
   };
@@ -113,29 +153,36 @@ export function parseTurnPlan(answers: Record<string, SystemOneAnswer>, input: T
   const confidence = clamp01(Number((answers.action as { confidence?: number } | undefined)?.confidence ?? fallback.confidence));
   const intentRaw = choiceOf(answers.intent, fallback.intent) as CommunicativeIntent;
   const stanceRaw = choiceOf(answers.stance, fallback.stance) as Stance;
-  const lengthRaw = choiceOf(answers.length, fallback.length) as ExpectedLength;
-  const directnessRaw = choiceOf(answers.directness, fallback.directness) as Directness;
-  const depthRaw = scoreOf(answers.depth, Number(fallback.cognitiveDepth.slice(1)), 4);
-  const playfulness = scoreOf(answers.playfulness, fallback.playfulness * 4, 4) / 4;
+  const intent = INTENTS.includes(intentRaw) ? intentRaw : fallback.intent;
+  const stance = STANCES.includes(stanceRaw) ? stanceRaw : fallback.stance;
+  const style = deriveTurnStyle(input, intent, stance);
+  const lengthRaw = choiceOf(answers.length, style.length) as ExpectedLength;
+  const directnessRaw = choiceOf(answers.directness, style.directness) as Directness;
+  const depthRaw = scoreOf(answers.depth, Number(style.cognitiveDepth.slice(1)), 4);
+  const playfulness = scoreOf(answers.playfulness, style.playfulness * 4, 4) / 4;
+  const addressed = input.addressed || noulOf(answers.addressed, false);
+  const voice = noulOf(answers.voice, false);
   return {
     action,
     confidence,
-    addressed: noulOf(answers.addressed, fallback.addressed),
+    addressed,
     topicRelevance: clamp01(Number((answers.action as { probabilities?: Record<string, number> } | undefined)?.probabilities?.[action] ?? fallback.topicRelevance)),
     moodFit: fallback.moodFit,
     reason: [
       `action=${actionRaw}`,
-      `addressed=${noulOf(answers.addressed, fallback.addressed)}`,
-      `voice=${noulOf(answers.voice, false)}`,
+      `intent=${intent}`,
+      `stance=${stance}`,
+      `addressed=${addressed}`,
+      `voice=${voice}`,
       `confidence=${confidence.toFixed(2)}`,
     ].join(' '),
-    intent: INTENTS.includes(intentRaw) ? intentRaw : fallback.intent,
-    stance: STANCES.includes(stanceRaw) ? stanceRaw : fallback.stance,
+    intent,
+    stance,
     cognitiveDepth: `L${Math.max(0, Math.min(4, Math.round(depthRaw)))}` as CognitiveDepth,
-    length: LENGTHS.includes(lengthRaw) ? lengthRaw : fallback.length,
-    directness: DIRECTNESS.includes(directnessRaw) ? directnessRaw : fallback.directness,
+    length: LENGTHS.includes(lengthRaw) ? lengthRaw : style.length,
+    directness: DIRECTNESS.includes(directnessRaw) ? directnessRaw : style.directness,
     playfulness: clamp01(playfulness),
-    voice: noulOf(answers.voice, false),
+    voice,
     needsArbiter: noulOf(answers.needs_arbiter, false),
   };
 }

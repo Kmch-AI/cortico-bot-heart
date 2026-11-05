@@ -16,10 +16,8 @@ export interface HeartConfig extends CoreConfig {
     /** 只存 secret 名；值从部署 .env 读。 */
     tokenSecret: string;
     systemoneModel: string;
-    /** 后台决策（记忆写入、重排、arbiter）的超时。 */
+    /** 所有 SystemOne 请求共用的超时；对话与后台任务同一阈值。 */
     timeoutMs: number;
-    /** 对话热路径（turn_plan / appraise）的等待预算；超时立即启发式，不重试。 */
-    interactiveTimeoutMs: number;
     /** SystemOne 不可用时是否让主模型回答同一组 typed questions。 */
     fallbackToMain: boolean;
     /** 低于此 confidence 的 choice 走保守回退。 */
@@ -106,7 +104,6 @@ export const HEART_DEFAULTS: HeartConfig = {
     tokenSecret: 'CORTICO_SERVICE_TOKEN',
     systemoneModel: 'jev-latest',
     timeoutMs: 2000,
-    interactiveTimeoutMs: 1200,
     fallbackToMain: true,
     confidenceThreshold: 0.55,
   },
@@ -210,8 +207,7 @@ export function heartConfigGroups(): ConfigGroup[] {
           'decision.serviceUrl': prop('服务地址', '服务 World 的 /v1/systemone 端点。', 'string'),
           'decision.tokenSecret': prop('令牌密钥名', '只存 .env 中的变量名。', 'string'),
           'decision.systemoneModel': prop('决策模型', 'Jev 兼容模型 id。', 'string'),
-          'decision.timeoutMs': prop('后台超时', '记忆写入/重排/arbiter 的毫秒上限。', 'integer', { minimum: 200, maximum: 60000 }),
-          'decision.interactiveTimeoutMs': prop('对话超时', 'turn_plan/appraise 的等待预算；超时立即启发式，不重试。', 'integer', { minimum: 100, maximum: 15000 }),
+          'decision.timeoutMs': prop('决策超时', 'turn_plan、appraise 与后台决策共用的毫秒上限。', 'integer', { minimum: 200, maximum: 60000 }),
           'decision.confidenceThreshold': prop('置信度阈值', 'choice 低于此值时保守回退。', 'number', { minimum: 0, maximum: 1 }),
         },
       },

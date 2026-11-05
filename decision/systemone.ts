@@ -139,6 +139,8 @@ export class SystemOneClient {
         } else {
           lastError = new SystemOneError('network', (err as Error)?.message ?? '网络错误');
         }
+        // 超时已经用完整段预算；再重试只会把等待翻倍。5xx/网络错误仍可按 attempts 重试。
+        if (lastError instanceof SystemOneError && lastError.kind === 'timeout') break;
         if (attempt >= maxAttempts - 1) break;
       } finally {
         clearTimeout(timer);

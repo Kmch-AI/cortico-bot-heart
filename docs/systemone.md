@@ -14,11 +14,11 @@
       "instructions": "...",
       "criteria": { "respond": "...", "silence": "...", "defer": "..." }
     },
-    "addressed": { "type": "noul", "instructions": "..." },
-    "depth": {
-      "type": "score",
-      "instructions": "...",
-      "criteria": ["自动反应", "浅层", "一般", "深度", "严谨推理"]
+    "voice": { "type": "noul", "instructions": "..." },
+    "length": {
+      "type": "choice",
+      "instructions": "期望长度。",
+      "criteria": { "short": "一两句", "medium": "一小段", "long": "展开说" }
     }
   }
 }
@@ -35,8 +35,8 @@
   "model": "jev-latest",
   "answers": {
     "action": { "type": "choice", "choice": "respond", "confidence": 0.82, "probabilities": {} },
-    "addressed": { "type": "noul", "noul": 0.96 },
-    "depth": { "type": "score", "score": 2.0, "confidence": 0.7, "legend": { "0": "...", "4": "..." }, "probabilities": {} }
+    "voice": { "type": "noul", "noul": 0.2 },
+    "length": { "type": "choice", "choice": "short", "confidence": 0.7, "probabilities": {} }
   },
   "usage": { "input_tokens": 412, "output_tokens": 0 }
 }
@@ -57,17 +57,18 @@ heart 直接使用数值并四舍五入到最近等级。
 
 | 任务 | questions |
 |---|---|
-| `turn_plan` | `action` choice；`addressed` / `voice` / `needs_arbiter` noul；`intent` / `stance` / `length` / `directness` choice；`depth` / `playfulness` score |
-| `appraise` | valence / arousal / energy / tension / importance / relationship_delta score |
+| `turn_plan` | `action` / `intent` / `stance` / `length` choice；`voice` noul（没有语音出口或用户明确要语音时省略） |
+| `appraise` | valence / arousal / energy / tension / relationship_delta score |
 | `memory_write` | `save` noul；`op` choice；`target` choice（top-8 邻居）；confidence / salience score |
 | `memory_rerank` | 每个候选一个 noul（最多 40） |
 | `output_arbiter` | 2–3 个候选 id 的 choice |
 
 ## 客户端
 
-- 热路径预算：`decision.interactiveTimeoutMs`（默认 1.2s）只用于 `turn_plan` 与 `appraise`，且只尝试一次；超时立即启发式，不重试。
-- `appraise` 不再和 `turn_plan` 一起阻塞回合：它在 `turn_plan` 之后后台运行，只影响心情/关系，不影响这一句的回复。
-- 后台超时：`decision.timeoutMs`（默认 2s）用于 memory write/rerank/arbiter；连接失败/5xx 在这些后台路径重试一次，4xx 不重试。
+- 统一超时：`decision.timeoutMs`（默认 2s）同时用于 `turn_plan`、`appraise` 与后台决策；不再有独立的对话超时。
+- `turn_plan` 与 `appraise` 同时发起，不再一前一后；回复只等 `turn_plan`，`appraise` 完成后更新心情/关系。两者都只尝试一次。超时已经用完整段预算，不再重试；后台的 5xx/网络错误仍按 attempts 重试。
+- state 预算：`turn_plan` state 估算上限 500 tokens；超了先删旧 `recent`，再删 `hot`，最后截 `events`，不静默塞满上下文。
+- 字段推导：模型只回答 action/intent/stance/length/voice；addressed 来自输入标志，directness/depth/playfulness/needsArbiter 由 mood、意图与输入推导。`appraise` 的 importance 由关系变化幅度推导。
 - 熔断：连续 3 次失败后 60s 直接降级。
 - 缓存：同一事件批的 turn plan 只算一次；同一查询的 rerank 批内复用（0.1 只做单次）。
 - trace：`memory/decisions/YYYY-MM-DD.jsonl`，含 task、模式、延迟、错误、摘要；不写密钥与完整隐私正文。
