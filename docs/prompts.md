@@ -4,25 +4,46 @@
 
 按顺序：
 
-1. `PREFIX.md`：`# {{persona.displayName}}`、自定义人设、身份摘要、表达目标、说话方式、记忆是数据、工具与交付路由、World 环境。
-2. `BEHAVIOR.md`：交际行为原则。
-3. `MEMORY_PROTOCOL.md`：记忆读写协议、隐私、冲突处理。
+1. `PREFIX`：`# {{persona.displayName}}`。
+2. `PROFILE`：`## 我是谁` + 用户 `PROFILE.md`；空则用 identity 摘要。
+3. `PERSONALITY`：`### 性格底色` + 用户 `PERSONALITY.md`；空则整段省略。
+4. `RELATIONSHIP`：`### 我与对方的关系` + 用户 `RELATIONSHIP.md`；空则整段省略。
+5. `GOALS`：`## 表达目标` + 用户 `GOALS.md`；空则用 `DEFAULT_GOALS.md`。
+6. `SPEECH`：`## 说话方式` + 用户 `SPEECH.md`；空则用 `DEFAULT_SPEECH.md`。
+7. `PREFIX_BODY`：`PREFIX.md` 的固定部分（记忆、工具与交付、World 环境）。
+8. `BEHAVIOR.md`：交际行为原则。
+9. `MEMORY_PROTOCOL.md`：记忆读写协议、隐私、冲突处理。
 
-基础模板只从包内 `persona/` 读取，不读部署覆盖，也不在 WebUI 提供编辑；插件升级时随包更新。
-唯一可写的是 `CUSTOM.md`：WebUI 提示词页保存到 `<部署根>/prompts/CUSTOM.md`，运行时优先读它，
-不存在才用包内空白模板。它的内容渲染后通过 `{{persona.custom}}` 插在 PREFIX 顶部；留空或只留
-HTML 注释则整段不插入。用户可以在里面用 `{{persona.displayName}}` 和 `{{persona.identity}}`。
+基础模板（`PREFIX.md`、`BEHAVIOR.md`、`MEMORY_PROTOCOL.md`、两个默认文件）只从包内 `persona/` 读取，
+不读部署覆盖，WebUI 也不提供编辑；插件升级时随包更新。
+
+五个用户槽是唯一可写的提示词：`PROFILE.md` / `PERSONALITY.md` / `RELATIONSHIP.md` / `GOALS.md` / `SPEECH.md`。
+WebUI 提示词页把每个槽保存到 `<部署根>/prompts/<名字>`，运行时优先读部署覆盖。每个文件只写正文，
+标题由 PREFIX 合并时补上；留空或只留 HTML 注释时按上面的回退规则处理。槽内可用
+`{{persona.displayName}}` 和 `{{persona.identity}}`。
 保存后 Core 不会自动重建前缀，需要在会话页执行一次「重载前缀」（或等下一次上下文交接）。
 
 变量：
 
-- `{{persona.custom}}`：用户人设文件渲染后的内容；空则不插入。
+- `{{persona.profile}}`：用户 `PROFILE.md` 的正文；空则回退到 `persona.identity`。填写后不再自动追加 identity，需要时在槽里插入 `{{persona.identity}}`。
+- `{{persona.personality}}`、`{{persona.relationship}}`：对应槽的正文；空则不插入。
+- `{{persona.goals}}`、`{{persona.speech}}`：对应槽的正文；空则回退到内置默认。
 - `{{persona.identity}}`：identity records 的摘要（title + content，最多 8 条，按 salience）；没有记录时用 displayName 的默认自述。
 - `{{persona.displayName}}`：显示名。
 - `{{worlds.envPrompts}}`：框架渲染的各 World 环境段。
 
-分工：`persona.identity` 是记忆里学到的、可变的自我；`CUSTOM.md` 是操作者手写的固定人设；基础模板是行为协议。
-不把全量记忆写进前缀；前缀只放 identity 摘要与协议。
+分工：`persona.identity` 是记忆里学到的、可变的自我；五个槽是操作者手写的固定人设；基础模板是行为协议。
+不把全量记忆写进前缀；前缀只放身份、用户人设与协议。
+
+槽位切分示例（以角色卡为例）：
+
+| 角色卡章节 | 放到 | 备注 |
+|---|---|---|
+| `## 我是谁` + `### 基本设定与日常` | `PROFILE.md` | 去掉标题，只留正文；`我是谁` 标题由 PREFIX 补 |
+| `### 性格底色` | `PERSONALITY.md` | 去掉标题 |
+| `### 我与小路泥的关系` | `RELATIONSHIP.md` | 去掉标题 |
+| `## 表达目标` | `GOALS.md` | 去掉标题；留空用内置默认 |
+| `## 说话方式` | `SPEECH.md` | 去掉标题；留空用内置默认 |
 
 ## 动态头（`sessionHead`）
 
@@ -46,4 +67,4 @@ HTML 注释则整段不插入。用户可以在里面用 `{{persona.displayName}
 
 ## 变量预览
 
-`Persona.promptVarValues()` 返回 `persona.custom`、`persona.identity`、`persona.displayName`、`worlds.envPrompts` 的当前值，供 WebUI 预览。`worlds.envPrompts` 在预览里为空，因为实际值由 Core 在每次前缀重建时提供。
+`Persona.promptVarValues()` 返回 `persona.profile`、`persona.personality`、`persona.relationship`、`persona.goals`、`persona.speech`、`persona.identity`、`persona.displayName`、`worlds.envPrompts` 的当前值，供 WebUI 预览。`worlds.envPrompts` 在预览里为空，因为实际值由 Core 在每次前缀重建时提供。

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5
+
+- 修复提示词页仍能编辑 PREFIX / BEHAVIOR / MEMORY_PROTOCOL：基础模板不再出现在 `promptDocs` 中，只作为只读段显示。
+- 人设拆成五个可分别填写的槽：`PROFILE`（我是谁/基本设定）、`PERSONALITY`（性格底色）、`RELATIONSHIP`（与对方的关系）、`GOALS`（表达目标）、`SPEECH`（说话方式）。每个槽只写正文，PREFIX 合并时补标题。
+- `PROFILE` 为空时回退到 identity 记忆摘要；`GOALS` / `SPEECH` 为空时回退到包内默认；`PERSONALITY` / `RELATIONSHIP` 为空时整段省略。
+- PREFIX.md 只保留标题、槽位标记、记忆、工具与 World 环境；`{{persona.identity}}` 仍是 identity records 摘要，不是用户人设。
+- 版本 0.1.5。
+
 ## 0.1.4
 
 - 基础提示词模板改为包内只读：PREFIX / BEHAVIOR / MEMORY_PROTOCOL 不再读部署覆盖，WebUI 也不提供编辑；已有部署覆盖会被忽略。
