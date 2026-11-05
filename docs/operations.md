@@ -4,9 +4,11 @@
 
 配置组（`config.ts`）：
 
-- `heart-decision`：启用 SystemOne、服务地址、token secret 名、模型、超时、置信度阈值、沉默模式。
-- `heart-memory`：后端、hot/warm 预算、topK、检索预算、向量维度、后台巩固。
-- `heart-output`：输出模式、语音开关/群聊默认/频率、mood 惯性/半衰期、巩固间隔。
+- `heart-identity`：显示名、语言、时区、软/硬轮数。
+- `heart-decision`：启用 SystemOne、服务地址、token secret 名、模型、超时、置信度阈值。
+- `heart-memory`：后端、hot/warm 预算、自动 embedding、后台队列/超时/巩固。
+- `heart-retrieval`：召回/重排/预算/MMR/弃权阈值、向量服务与模型。
+- `heart-output`：输出模式/候选数/超时、语音开关/群聊默认/频率、mood 惯性/半衰期。
 
 完整字段见 `HeartConfig`。密钥只存 `.env` 变量名，不存值。
 

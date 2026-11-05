@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- 移除 Core drop 适配：Core PR [#371](https://github.com/Pal-AI-Lab/Cortico/pull/371) 被维护者拒绝，silence/defer 只走语义沉默（注入“不要回应”，主模型自行 `end_turn`）。
+- 删除 `persona/coreCompat.ts`、`silence.mode` 配置与相关测试；移除 `docs/core-drop.md`；ADR 0004 记录拒绝理由与 `deliveryGate` 替代建议。
+
 ## 0.1.2
 
 - 修复 SystemOne `score` 请求格式：改用最低级在前的 `criteria` 数组，不再发 `legend`；修复上游 422 导致 turn plan / appraisal / memory_write 全部降级。

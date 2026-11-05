@@ -4,7 +4,7 @@
  * 边界：
  * - 不直接执行 World 工具；语音/QQ 由主模型按 DeliveryPlan 调用。
  * - 钩子不 await 记忆任务；只入队，worker 在后台串行处理。
- * - stock Core 上沉默是语义沉默：注入一句“不要回应”，主模型仍会跑一次。
+ * - 沉默是语义沉默：注入一句“不要回应”，主模型仍会跑一次并自行 end_turn。
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -52,7 +52,6 @@ import { emotionalIntensity, gateVoice, isExplicitVoiceRequest } from '../output
 import { buildCandidateBrief, fallbackChoice, parseCandidates, shouldArbitrate } from '../output/arbiter.ts';
 import { heuristicTurnPlan, renderTurnPlan, type TurnPlan, type TurnPlanInput } from '../output/turnPlan.ts';
 import { FileBlobStore } from './blobs.ts';
-import { supportsDeliveryDrop } from './coreCompat.ts';
 
 const MAIN = 'main';
 
@@ -127,8 +126,6 @@ export class HeartPersona implements Persona {
   private shutdownDone = false;
   private clientKey = '';
   private consolidationTimerId: string | null = null;
-  /** core-drop 模式遇到不支持 drop 的 Core 只告警一次。 */
-  private dropUnsupportedWarned = false;
 
   constructor(private readonly opts: HeartPersonaOptions) {
     this.memoryDir = opts.memoryDir;
@@ -167,7 +164,6 @@ export class HeartPersona implements Persona {
       memoryDir: this.memoryDir,
       backend: this.store.backend,
       vector: this.store.vectorEnabled,
-      deliveryDrop: supportsDeliveryDrop(core),
     });
   }
 
@@ -519,14 +515,6 @@ ${chosen.text}`, 'arbiter');
 
     if (plan.action === 'silence' || plan.action === 'defer') {
       if (plan.action === 'defer') this.attention.defer(text, last.source);
-      const drop = this.dropDecision(plan.action, plan.reason);
-      if (drop) {
-        // Core 会丢弃这一批；onBatchEnd 不会运行，先把事件交给记忆 worker，再补回合计数。
-        this.flushPacket();
-        this.turns++;
-        // stock Core 的类型仍只允许 void；支持 deliveryDrop 的 Core 在运行时读这个对象。
-        return drop as unknown as void;
-      }
       this.core?.injectInternal(
         plan.action === 'silence'
           ? '[attention] 这一批不值得回应。不要输出正文，不要调用发送工具，直接 end_turn。'
@@ -534,21 +522,6 @@ ${chosen.text}`, 'arbiter');
         'attention',
       );
     }
-  }
-
-  /** 沉默/暂缓时是否让 Core 丢弃整批；对应 `silence.mode`。 */
-  private dropDecision(action: 'silence' | 'defer', reason: string): { action: 'drop'; reason: string } | null {
-    const mode = this.opts.config().silence.mode;
-    if (mode === 'semantic') return null;
-    if (!supportsDeliveryDrop(this.core)) {
-      if (mode === 'core-drop' && !this.dropUnsupportedWarned) {
-        this.dropUnsupportedWarned = true;
-        this.opts.logger?.warn('silence.mode=core-drop 但 Core 不支持 deliveryDrop，回退语义沉默');
-      }
-      return null;
-    }
-    const why = reason.trim() ? `${action}: ${reason.trim()}` : action;
-    return { action: 'drop', reason: why.slice(0, 240) };
   }
 
   onBatchEnd(): void {

@@ -22,7 +22,7 @@ pnpm check:extension <本包目录>
 - `tests/unit/decision.test.ts`：SystemOne typed answers 映射、网络失败降级、超限 state 拒绝。
 - `tests/unit/route.test.ts`：控制台/QQ/未知 World/多来源路由与目标。
 - `tests/unit/retrieve.test.ts`：查询构造、相关召回、abstain、写入去重、显式候选审计。
-- `tests/integration/persona.test.ts`：私聊回复路由、群聊语义沉默、内部通知不触发决策、静态前缀、异步记忆回执。
+- `tests/integration/persona.test.ts`：私聊回复路由、群聊语义沉默、内部通知不触发决策、静态前缀、后台直连记忆。
 - `tests/integration/http-services.test.ts`：真实本地 HTTP 下的 SystemOne / embeddings / rerank 形状。
 - `tests/unit/jsonl.test.ts`、`tests/unit/vector.test.ts`：JSONL 降级持久化与可选 sqlite-vec KNN。
 
@@ -32,7 +32,6 @@ pnpm check:extension <本包目录>
 - 后台 worker 的直连 `core.llm` 路径/超时/队列上限（已有基础异步测试）。
 - arbiter 候选生成/选择（当前只在集成路径中留接口，未做专门 golden）。
 - SystemOne 服务契约的 HTTP fake（当前 fake fetch）。
-- Core drop 模拟（`deliveryDrop=true` 时零主模型调用）——等 Core PR。
 - Golden 对话集：silence/voice/memory 选择，允许措辞变化，断言结构与关键事实。
 - 故障注入：SQLite 忙/半写、embedding 500、rerank 501、后台请求超时。
 - 安全：跨 scope 泄漏、secret 不落盘、群聊私事不在群聊/第三方检索。

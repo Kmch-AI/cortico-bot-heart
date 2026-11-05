@@ -52,10 +52,6 @@ export interface HeartConfig extends CoreConfig {
     timeoutMs: number;
     consolidation: boolean;
   };
-  silence: {
-    /** auto：检测到 Core drop 就用，否则语义沉默。 */
-    mode: 'auto' | 'semantic' | 'core-drop';
-  };
   mood: {
     inertia: number;
     halfLifeMinutes: number;
@@ -138,9 +134,6 @@ export const HEART_DEFAULTS: HeartConfig = {
     timeoutMs: 120000,
     consolidation: true,
   },
-  silence: {
-    mode: 'auto',
-  },
   mood: {
     inertia: 0.85,
     halfLifeMinutes: 60,
@@ -215,7 +208,6 @@ export function heartConfigGroups(): ConfigGroup[] {
           'decision.systemoneModel': prop('决策模型', 'Jev 兼容模型 id。', 'string'),
           'decision.timeoutMs': prop('超时', '毫秒；超时立即降级。', 'integer', { minimum: 200, maximum: 15000 }),
           'decision.confidenceThreshold': prop('置信度阈值', 'choice 低于此值时保守回退。', 'number', { minimum: 0, maximum: 1 }),
-          'silence.mode': prop('沉默模式', 'auto 检测 Core drop；否则语义沉默。', 'string', { enum: ['auto', 'semantic', 'core-drop'] }),
         },
       },
     },
