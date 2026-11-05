@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- 修复直接对话被低置信度沉默吞掉。点名、私聊或控制台消息的 `action` 为 `silence` / `defer` 且置信度低于 0.8 时，改回 `respond`；高置信度沉默仍保留。
+
 ## 0.1.10
 
 - 撤销 0.1.9 的独立对话预算：删除 `decision.interactiveTimeoutMs`，`turn_plan`、`appraise` 与后台决策共用 `decision.timeoutMs`（默认 6s）；超时不再重试，避免一次超时变成两倍等待。

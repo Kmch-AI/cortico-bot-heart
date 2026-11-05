@@ -1,6 +1,6 @@
 {
   "name": "@kmchai/cortico-bot-heart",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "description": "Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持久记忆，按信息来源决定文字/语音与是否开口；发送交给 World。",
   "author": "kmchai",

@@ -22,6 +22,9 @@ import {
 import { heuristicTurnPlan, parseTurnPlan, type TurnPlan, type TurnPlanInput } from '../output/turnPlan.ts';
 import type { MemoryCandidate, MemoryRecord } from '../memory/types.ts';
 
+/** 直接对话（点名/私聊/控制台）要保留高置信度沉默，但低置信度沉默必须回到回应。 */
+const DIRECT_SILENCE_CONFIDENCE = 0.8;
+
 export interface DecisionTrace {
   task: string;
   at: string;
@@ -62,11 +65,7 @@ export class DecisionPlane {
     try {
       const response = await this.opts.client.ask({ state, questions: turnPlanQuestions(input) }, this.opts.timeoutMs, 1);
       const plan = parseTurnPlan(response.answers as Record<string, SystemOneAnswer>, input);
-      // 低置信度的“回应”在非点名/非私聊场景回退为观察；不让一次模糊判断硬接话。
-      if (plan.action === 'respond' && plan.confidence < this.opts.confidenceThreshold && !input.addressed && !input.isPrivate) {
-        plan.action = 'silence';
-        plan.reason += ' (low confidence -> silence)';
-      }
+      this.resolveAction(plan, input);
       plan.needsArbiter = plan.needsArbiter || this.needsArbiter(plan, input);
       return { plan, trace: this.trace('turn_plan', 'systemone', start, plan.confidence, plan.reason) };
     } catch (err) {
@@ -161,6 +160,23 @@ export class DecisionPlane {
 
   private now(): number {
     return this.opts.now?.() ?? Date.now();
+  }
+
+  /** 直接对话宁可回应；只有高置信度沉默才保留。环境消息反向处理。 */
+  private resolveAction(plan: TurnPlan, input: TurnPlanInput): void {
+    const direct = input.addressed || input.isPrivate;
+    if (direct) {
+      if (plan.action !== 'respond' && plan.confidence < DIRECT_SILENCE_CONFIDENCE) {
+        const weakAction = plan.action;
+        plan.action = 'respond';
+        plan.reason += ` (direct low-confidence ${weakAction} -> respond)`;
+      }
+      return;
+    }
+    if (plan.action === 'respond' && plan.confidence < this.opts.confidenceThreshold) {
+      plan.action = 'silence';
+      plan.reason += ' (low confidence -> silence)';
+    }
   }
 
   /** 需要候选仲裁的回合：高 stakes，或低置信度的直接对话。 */
