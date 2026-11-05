@@ -230,19 +230,15 @@ export class HeartPersona implements Persona {
       .filter((w) => w.envPrompt.trim())
       .map((w) => `## ${w.id}\n${w.envPrompt.trim()}`)
       .join('\n\n');
-    // 基础模板来自包内，始终只读；只有五个用户人设槽允许部署覆盖。
+    // 基础模板来自包内，始终只读；只有整块用户人设 PERSONA.md 允许部署覆盖。
     const readBase = (name: string): string => this.packagePromptText(name);
     const vars = {
       'persona.identity': identity,
       'persona.displayName': cfg.identity.displayName,
       'worlds.envPrompts': envPrompts,
     };
-    const profile = this.composedProfile();
-    const personality = this.userPromptText('PERSONALITY.md');
-    const relationship = this.userPromptText('RELATIONSHIP.md');
-    const goals = this.userPromptText('GOALS.md') || readBase('DEFAULT_GOALS.md').trim();
-    const speech = this.userPromptText('SPEECH.md') || readBase('DEFAULT_SPEECH.md').trim();
-    // PREFIX.md 只保留固定骨架；用户字段在 marker 处合并，每段带自己的 sourceKey 供提示词页编辑。
+    const custom = this.userPromptText('PERSONA.md');
+    // PREFIX.md 只保留固定骨架；用户人设在 marker 处合并，带 sourceKey 供提示词页编辑。
     const rawPrefix = readBase('PREFIX.md');
     const marker = '<!-- persona-slots -->';
     const [before, after] = rawPrefix.includes(marker) ? rawPrefix.split(marker) : [rawPrefix, ''];
@@ -250,15 +246,9 @@ export class HeartPersona implements Persona {
     const body = renderTemplate(after, vars).replace(/\n{3,}/g, '\n\n').trim();
     const behavior = renderTemplate(readBase('BEHAVIOR.md'), vars).replace(/\n{3,}/g, '\n\n').trim();
     const memoryProtocol = renderTemplate(readBase('MEMORY_PROTOCOL.md'), vars).replace(/\n{3,}/g, '\n\n').trim();
-    const section = (level: '##' | '###', title: string, content: string): string =>
-      content ? `${level} ${title}\n\n${content}\n\n` : '';
     return [
       { title: 'PREFIX', text: head ? `${head}\n\n` : '' },
-      { title: 'PROFILE', text: section('##', '我是谁', profile), sourceKey: 'persona.profile' },
-      { title: 'PERSONALITY', text: section('###', '性格底色', personality), sourceKey: 'persona.personality' },
-      { title: 'RELATIONSHIP', text: section('###', '我与对方的关系', relationship), sourceKey: 'persona.relationship' },
-      { title: 'GOALS', text: section('##', '表达目标', goals), sourceKey: 'persona.goals' },
-      { title: 'SPEECH', text: section('##', '说话方式', speech), sourceKey: 'persona.speech' },
+      { title: 'CUSTOM', text: custom ? `${custom}\n\n` : '', sourceKey: 'persona.custom' },
       { title: 'PREFIX_BODY', text: body ? `${body}\n\n` : '' },
       { title: 'BEHAVIOR', text: behavior ? `${behavior}\n\n` : '' },
       { title: 'MEMORY_PROTOCOL', text: memoryProtocol },
@@ -269,11 +259,7 @@ export class HeartPersona implements Persona {
     return {
       'persona.identity': this.identityText(),
       'persona.displayName': this.opts.config().identity.displayName,
-      'persona.profile': this.composedProfile(),
-      'persona.personality': this.userPromptText('PERSONALITY.md'),
-      'persona.relationship': this.userPromptText('RELATIONSHIP.md'),
-      'persona.goals': this.userPromptText('GOALS.md') || this.packagePromptText('DEFAULT_GOALS.md').trim(),
-      'persona.speech': this.userPromptText('SPEECH.md') || this.packagePromptText('DEFAULT_SPEECH.md').trim(),
+      'persona.custom': this.userPromptText('PERSONA.md'),
       'worlds.envPrompts': '',
     };
   }
@@ -638,13 +624,6 @@ ${chosen.text}`, 'arbiter');
   webUi(language: 'zh' | 'en' = 'zh'): PersonaWebUiDecl {
     const zh = language === 'zh';
     const started = !!this.store;
-    const slotDoc = (key: string, title: string, file: string, description: string) => ({
-      key,
-      title,
-      description,
-      path: this.userPromptSource(file),
-      deploymentPath: join(this.opts.promptDir, file),
-    });
     return {
       badges: [
         { label: zh ? '心情' : 'Mood', value: started ? this.mood.current().label : '—' },
@@ -660,36 +639,15 @@ ${chosen.text}`, 'arbiter');
         { id: 'service', title: zh ? '服务' : 'Service', getMethods: ['probe'] },
       ],
       promptDocs: [
-        slotDoc(
-          'persona.profile',
-          zh ? '我是谁 / 基本设定' : 'Profile',
-          'PROFILE.md',
-          zh ? '只写正文，标题由 PREFIX 合并；identity 记忆摘要总会先加入，这段追加在它后面。' : 'Body only; PREFIX supplies the heading. The identity summary is always included first; this body is appended after it.',
-        ),
-        slotDoc(
-          'persona.personality',
-          zh ? '性格底色' : 'Personality',
-          'PERSONALITY.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则不加这一段。' : 'Body only; PREFIX supplies the heading. Empty omits this section.',
-        ),
-        slotDoc(
-          'persona.relationship',
-          zh ? '与对方的关系' : 'Relationship',
-          'RELATIONSHIP.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则不加这一段。' : 'Body only; PREFIX supplies the heading. Empty omits this section.',
-        ),
-        slotDoc(
-          'persona.goals',
-          zh ? '表达目标' : 'Goals',
-          'GOALS.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则使用内置默认。' : 'Body only; PREFIX supplies the heading. Empty uses the built-in default.',
-        ),
-        slotDoc(
-          'persona.speech',
-          zh ? '说话方式' : 'Speech',
-          'SPEECH.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则使用内置默认。' : 'Body only; PREFIX supplies the heading. Empty uses the built-in default.',
-        ),
+        {
+          key: 'persona.custom',
+          title: zh ? '人设模板' : 'Persona template',
+          description: zh
+            ? '整块人设模板；identity 摘要会自动放在它前面，留空则只保留 identity。'
+            : 'Whole persona template; the identity summary is inserted before it. Empty keeps only the identity summary.',
+          path: this.userPromptSource('PERSONA.md'),
+          deploymentPath: join(this.opts.promptDir, 'PERSONA.md'),
+        },
       ],
       memory: {
         panels: [
@@ -871,26 +829,20 @@ ${chosen.text}`, 'arbiter');
     return existsSync(path) ? readTextFile(path) : '';
   }
 
-  /** 用户人设槽：部署覆盖存在就用它，否则用包内空白模板。 */
+  /** 用户人设整块：部署覆盖存在就用它，否则用包内默认模板。 */
   private userPromptSource(name: string): string {
     const override = join(this.opts.promptDir, name);
     return existsSync(override) ? override : join(this.opts.packageDir, 'persona', name);
   }
 
-  /** 读取一个用户人设槽；用户模板是纯 Markdown，不做变量替换。 */
+  /** 读取整块人设；纯 Markdown，不做变量替换；注释和只有标题的空段去掉。 */
   private userPromptText(name: string): string {
     const path = this.userPromptSource(name);
     if (!existsSync(path)) return '';
     const raw = readTextFile(path);
     if (!raw.trim()) return '';
-    return raw.replace(/<!--[\s\S]*?-->/g, '').trim();
-  }
-
-  /** PROFILE 槽永远包含 identity 摘要；用户正文追加在后面。 */
-  private composedProfile(): string {
-    const identity = this.identityText();
-    const custom = this.userPromptText('PROFILE.md');
-    return custom ? `${identity}\n\n${custom}` : identity;
+    const text = raw.replace(/<!--[\s\S]*?-->/g, '');
+    return stripEmptyMarkdownSections(text).trim();
   }
 
   /** bot 自己的名字/自称；用于把“用户叫什么”从核心身份里分出来。 */
@@ -1117,6 +1069,11 @@ function isGroupConversation(events: readonly EventEnvelope[]): boolean {
   });
 }
 
+
+/** 去掉后面没有正文、直接接下一个标题或结尾的 Markdown 标题段。 */
+function stripEmptyMarkdownSections(text: string): string {
+  return text.replace(/^(#{2,6}[^\n]*)\n(?:[ \t]*\n)*(?=#{2,6}\s|(?![\s\S]))/gm, '');
+}
 
 function userRecord(text: string): ContextRecord {
   return {

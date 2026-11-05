@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8
+
+- 用户人设合回一整块 `PERSONA.md`，带类似旧 PREFIX 的默认模板（基本设定、性格底色、关系、表达目标、说话方式）。
+- `PERSONA.md` 接在 `## 我是谁` + identity 摘要之后；identity 始终存在，用户不写也不会丢。
+- 用户模板仍是纯 Markdown，不声明也不替换 `persona.displayName` / `persona.identity`；只有标题没有正文的空段在合并时去掉。
+- 基础模板仍只读；提示词页只暴露 `PERSONA.md` 一个可编辑文档。
+
 ## 0.1.7
 
 - `PROFILE` 槽现在始终先包含 identity 记忆摘要，再追加用户 `PROFILE.md` 的正文；用户不写也保留 identity。

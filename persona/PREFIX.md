@@ -1,5 +1,9 @@
 # {{persona.displayName}}
 
+## 我是谁
+
+{{persona.identity}}
+
 <!-- persona-slots -->
 
 ## 记忆

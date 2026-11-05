@@ -226,31 +226,39 @@ describe('HeartPersona integration', () => {
     persona.shutdown();
   });
 
-  it('merges separate persona slots into PREFIX in order', async () => {
+  it('merges one persona template after the identity section', async () => {
     const { persona, dir, cfg } = makePersona();
     const prompts = join(dir, 'prompts');
     mkdirSync(prompts, { recursive: true });
-    writeFileSync(join(prompts, 'PROFILE.md'), '我是四时小路，在十字路口发传单。', 'utf8');
-    writeFileSync(join(prompts, 'PERSONALITY.md'), '- 骄傲臭屁，但会认错。', 'utf8');
-    writeFileSync(join(prompts, 'RELATIONSHIP.md'), '- 把常来的人当熟人，不做单向粉丝服务。', 'utf8');
-    writeFileSync(join(prompts, 'GOALS.md'), '保持角色一致，不为了讨好而改立场。', 'utf8');
-    writeFileSync(join(prompts, 'SPEECH.md'), '- 句尾偶尔加 `+`，不用 Emoji。', 'utf8');
+    writeFileSync(join(prompts, 'PERSONA.md'), [
+      '### 基本设定与日常',
+      '',
+      '我是四时小路，在十字路口发传单。',
+      '',
+      '### 性格底色',
+      '',
+      '- 骄傲臭屁，但会认错。',
+      '',
+      '## 表达目标',
+      '',
+      '保持角色一致，不为了讨好而改立场。',
+      '',
+      '## 说话方式',
+      '',
+      '- 句尾偶尔加 `+`，不用 Emoji。',
+    ].join('\n'), 'utf8');
     const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
-    expect(segments.find((s) => s.title === 'PREFIX')?.text).toBe(`# ${cfg.identity.displayName}\n\n`);
-    const profile = segments.find((s) => s.title === 'PROFILE')?.text ?? '';
-    expect(profile).toContain('我的记忆、判断和说话方式构成连续性');
-    expect(profile).toContain('我是四时小路，在十字路口发传单。');
-    expect(profile.indexOf('我的记忆、判断和说话方式构成连续性')).toBeLessThan(profile.indexOf('我是四时小路'));
-    expect(profile).toContain('## 我是谁');
-    expect(segments.find((s) => s.title === 'PERSONALITY')?.text).toContain('### 性格底色');
-    expect(segments.find((s) => s.title === 'RELATIONSHIP')?.text).toContain('### 我与对方的关系');
-    expect(segments.find((s) => s.title === 'GOALS')?.text).toContain('保持角色一致');
-    expect(segments.find((s) => s.title === 'SPEECH')?.text).toContain('句尾偶尔加');
+    const prefix = segments.find((s) => s.title === 'PREFIX')?.text ?? '';
+    expect(prefix).toContain(`# ${cfg.identity.displayName}`);
+    expect(prefix).toContain('## 我是谁');
+    expect(prefix).toContain('我的记忆、判断和说话方式构成连续性');
+    expect(segments.find((s) => s.title === 'CUSTOM')?.text).toContain('我是四时小路，在十字路口发传单。');
+    expect(segments.find((s) => s.title === 'CUSTOM')?.text).toContain('保持角色一致');
     expect(segments.find((s) => s.title === 'PREFIX_BODY')?.text).toContain('## 记忆');
     persona.shutdown();
   });
 
-  it('keeps base templates read-only and exposes only persona slots for writing', async () => {
+  it('keeps base templates read-only and exposes only the persona template for writing', async () => {
     const { persona, dir } = makePersona();
     const prompts = join(dir, 'prompts');
     mkdirSync(prompts, { recursive: true });
@@ -260,17 +268,9 @@ describe('HeartPersona integration', () => {
     expect(joined).not.toContain('Override');
     expect(joined).toContain('先问「我想说什么」');
     const docs = persona.webUi('zh').promptDocs ?? [];
-    expect(docs.map((d) => d.key)).toEqual([
-      'persona.profile',
-      'persona.personality',
-      'persona.relationship',
-      'persona.goals',
-      'persona.speech',
-    ]);
-    for (const doc of docs) {
-      expect(doc.deploymentPath).toBe(join(prompts, doc.key.split('.')[1]!.toUpperCase() + '.md'));
-      expect(doc.vars).toBeUndefined();
-    }
+    expect(docs.map((d) => d.key)).toEqual(['persona.custom']);
+    expect(docs[0]?.deploymentPath).toBe(join(prompts, 'PERSONA.md'));
+    expect(docs[0]?.vars).toBeUndefined();
     expect(docs.some((d) => d.key === 'persona.prefix')).toBe(false);
     persona.shutdown();
   });
@@ -283,8 +283,12 @@ describe('HeartPersona integration', () => {
       worlds: [{ id: 'qq', envPrompt: 'QQ env' }],
     });
     expect(segments.map((s) => s.title)).toContain('PREFIX');
-    expect(segments.map((s) => s.title)).toContain('PROFILE');
-    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('我的记忆、判断和说话方式构成连续性');
+    expect(segments.map((s) => s.title)).toContain('CUSTOM');
+    expect(segments.find((s) => s.title === 'PREFIX')?.text).toContain('我的记忆、判断和说话方式构成连续性');
+    const custom = segments.find((s) => s.title === 'CUSTOM')?.text ?? '';
+    expect(custom).not.toContain('### 基本设定与日常');
+    expect(custom).not.toContain('<!--');
+    expect(custom).toContain('## 表达目标');
     expect(segments.map((s) => s.text).join('\n')).toContain('先问「我想说什么」');
     expect(segments.map((s) => s.text).join('\n')).toContain('QQ env');
     persona.shutdown();
