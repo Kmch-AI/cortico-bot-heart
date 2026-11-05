@@ -644,10 +644,6 @@ ${chosen.text}`, 'arbiter');
       description,
       path: this.userPromptSource(file),
       deploymentPath: join(this.opts.promptDir, file),
-      vars: [
-        { name: 'persona.displayName', description: zh ? '当前显示名。' : 'Current display name.' },
-        { name: 'persona.identity', description: zh ? 'identity 记忆摘要；没有记录时用默认自述。' : 'Identity memory summary, or the default self-description.', multiline: true },
-      ],
     });
     return {
       badges: [
@@ -668,7 +664,7 @@ ${chosen.text}`, 'arbiter');
           'persona.profile',
           zh ? '我是谁 / 基本设定' : 'Profile',
           'PROFILE.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则使用 identity 记忆摘要，填写后不再自动追加（需要时插入 {{persona.identity}}）。' : 'Body only; PREFIX supplies the heading. Empty falls back to the identity summary; when filled, it is not appended automatically (insert {{persona.identity}} if wanted).',
+          zh ? '只写正文，标题由 PREFIX 合并；留空则使用 identity 记忆摘要，填写后不再自动追加。' : 'Body only; PREFIX supplies the heading. Empty falls back to the identity summary; when filled, the summary is not appended automatically.',
         ),
         slotDoc(
           'persona.personality',
@@ -881,17 +877,13 @@ ${chosen.text}`, 'arbiter');
     return existsSync(override) ? override : join(this.opts.packageDir, 'persona', name);
   }
 
-  /** 读取并渲染一个用户人设槽；HTML 注释剥掉，空内容不插入。 */
+  /** 读取一个用户人设槽；用户模板是纯 Markdown，不做变量替换。 */
   private userPromptText(name: string): string {
     const path = this.userPromptSource(name);
     if (!existsSync(path)) return '';
     const raw = readTextFile(path);
     if (!raw.trim()) return '';
-    const rendered = renderTemplate(raw, {
-      'persona.displayName': this.opts.config().identity.displayName,
-      'persona.identity': this.identityText(),
-    });
-    return rendered.replace(/<!--[\s\S]*?-->/g, '').trim();
+    return raw.replace(/<!--[\s\S]*?-->/g, '').trim();
   }
 
   /** bot 自己的名字/自称；用于把“用户叫什么”从核心身份里分出来。 */

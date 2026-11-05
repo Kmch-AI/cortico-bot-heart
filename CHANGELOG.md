@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- 用户人设槽（`PROFILE` / `PERSONALITY` / `RELATIONSHIP` / `GOALS` / `SPEECH`）不再声明 `persona.displayName` / `persona.identity`；提示词页不再显示这两个变量。
+- 用户槽不再做变量替换，按纯 Markdown 原样进入 PREFIX；槽内写 `{{...}}` 会保留字面值。
+- 回退逻辑不变：`PROFILE` 空用 identity 摘要，`GOALS` / `SPEECH` 空用包内默认，`PERSONALITY` / `RELATIONSHIP` 空省略整段。
+
 ## 0.1.5
 
 - 修复提示词页仍能编辑 PREFIX / BEHAVIOR / MEMORY_PROTOCOL：基础模板不再出现在 `promptDocs` 中，只作为只读段显示。

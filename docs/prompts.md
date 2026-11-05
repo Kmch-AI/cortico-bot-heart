@@ -19,18 +19,18 @@
 
 五个用户槽是唯一可写的提示词：`PROFILE.md` / `PERSONALITY.md` / `RELATIONSHIP.md` / `GOALS.md` / `SPEECH.md`。
 WebUI 提示词页把每个槽保存到 `<部署根>/prompts/<名字>`，运行时优先读部署覆盖。每个文件只写正文，
-标题由 PREFIX 合并时补上；留空或只留 HTML 注释时按上面的回退规则处理。槽内可用
-`{{persona.displayName}}` 和 `{{persona.identity}}`。
+标题由 PREFIX 合并时补上；留空或只留 HTML 注释时按上面的回退规则处理。用户槽是纯 Markdown，
+不做变量替换，也不声明 `persona.displayName` / `persona.identity` 之类的占位符。
 保存后 Core 不会自动重建前缀，需要在会话页执行一次「重载前缀」（或等下一次上下文交接）。
 
-变量：
+合并变量（运行时内部使用，不是用户槽可写的占位符）：
 
-- `{{persona.profile}}`：用户 `PROFILE.md` 的正文；空则回退到 `persona.identity`。填写后不再自动追加 identity，需要时在槽里插入 `{{persona.identity}}`。
-- `{{persona.personality}}`、`{{persona.relationship}}`：对应槽的正文；空则不插入。
-- `{{persona.goals}}`、`{{persona.speech}}`：对应槽的正文；空则回退到内置默认。
-- `{{persona.identity}}`：identity records 的摘要（title + content，最多 8 条，按 salience）；没有记录时用 displayName 的默认自述。
-- `{{persona.displayName}}`：显示名。
-- `{{worlds.envPrompts}}`：框架渲染的各 World 环境段。
+- `persona.profile`：用户 `PROFILE.md` 的正文；空则回退到 identity 摘要。填写后不再自动追加 identity。
+- `persona.personality`、`persona.relationship`：对应槽的正文；空则不插入。
+- `persona.goals`、`persona.speech`：对应槽的正文；空则回退到内置默认。
+- `persona.identity`：identity records 的摘要（title + content，最多 8 条，按 salience）；没有记录时用 displayName 的默认自述。
+- `persona.displayName`：显示名。
+- `worlds.envPrompts`：框架渲染的各 World 环境段。
 
 分工：`persona.identity` 是记忆里学到的、可变的自我；五个槽是操作者手写的固定人设；基础模板是行为协议。
 不把全量记忆写进前缀；前缀只放身份、用户人设与协议。

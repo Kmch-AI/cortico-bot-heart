@@ -230,14 +230,14 @@ describe('HeartPersona integration', () => {
     const { persona, dir, cfg } = makePersona();
     const prompts = join(dir, 'prompts');
     mkdirSync(prompts, { recursive: true });
-    writeFileSync(join(prompts, 'PROFILE.md'), '我是 {{persona.displayName}}，在十字路口发传单。', 'utf8');
+    writeFileSync(join(prompts, 'PROFILE.md'), '我是四时小路，在十字路口发传单。', 'utf8');
     writeFileSync(join(prompts, 'PERSONALITY.md'), '- 骄傲臭屁，但会认错。', 'utf8');
     writeFileSync(join(prompts, 'RELATIONSHIP.md'), '- 把常来的人当熟人，不做单向粉丝服务。', 'utf8');
     writeFileSync(join(prompts, 'GOALS.md'), '保持角色一致，不为了讨好而改立场。', 'utf8');
     writeFileSync(join(prompts, 'SPEECH.md'), '- 句尾偶尔加 `+`，不用 Emoji。', 'utf8');
     const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
     expect(segments.find((s) => s.title === 'PREFIX')?.text).toBe(`# ${cfg.identity.displayName}\n\n`);
-    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain(`我是 ${cfg.identity.displayName}，在十字路口发传单。`);
+    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('我是四时小路，在十字路口发传单。');
     expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('## 我是谁');
     expect(segments.find((s) => s.title === 'PERSONALITY')?.text).toContain('### 性格底色');
     expect(segments.find((s) => s.title === 'RELATIONSHIP')?.text).toContain('### 我与对方的关系');
@@ -264,7 +264,10 @@ describe('HeartPersona integration', () => {
       'persona.goals',
       'persona.speech',
     ]);
-    for (const doc of docs) expect(doc.deploymentPath).toBe(join(prompts, doc.key.split('.')[1]!.toUpperCase() + '.md'));
+    for (const doc of docs) {
+      expect(doc.deploymentPath).toBe(join(prompts, doc.key.split('.')[1]!.toUpperCase() + '.md'));
+      expect(doc.vars).toBeUndefined();
+    }
     expect(docs.some((d) => d.key === 'persona.prefix')).toBe(false);
     persona.shutdown();
   });
