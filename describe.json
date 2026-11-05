@@ -248,7 +248,7 @@
     {
       "key": "persona.profile",
       "title": "我是谁 / 基本设定",
-      "content": "<!-- 我是谁与基本设定；只写正文，标题由 PREFIX 提供。留空或只留注释则使用身份记忆摘要。 -->\n"
+      "content": "<!-- 我是谁与基本设定；只写正文，标题由 PREFIX 提供。identity 记忆摘要总会先加入，这里的内容追加在它后面。 -->\n"
     },
     {
       "key": "persona.personality",

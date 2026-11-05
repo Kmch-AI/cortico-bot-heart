@@ -237,7 +237,7 @@ export class HeartPersona implements Persona {
       'persona.displayName': cfg.identity.displayName,
       'worlds.envPrompts': envPrompts,
     };
-    const profile = this.userPromptText('PROFILE.md') || identity;
+    const profile = this.composedProfile();
     const personality = this.userPromptText('PERSONALITY.md');
     const relationship = this.userPromptText('RELATIONSHIP.md');
     const goals = this.userPromptText('GOALS.md') || readBase('DEFAULT_GOALS.md').trim();
@@ -269,7 +269,7 @@ export class HeartPersona implements Persona {
     return {
       'persona.identity': this.identityText(),
       'persona.displayName': this.opts.config().identity.displayName,
-      'persona.profile': this.userPromptText('PROFILE.md') || this.identityText(),
+      'persona.profile': this.composedProfile(),
       'persona.personality': this.userPromptText('PERSONALITY.md'),
       'persona.relationship': this.userPromptText('RELATIONSHIP.md'),
       'persona.goals': this.userPromptText('GOALS.md') || this.packagePromptText('DEFAULT_GOALS.md').trim(),
@@ -664,7 +664,7 @@ ${chosen.text}`, 'arbiter');
           'persona.profile',
           zh ? '我是谁 / 基本设定' : 'Profile',
           'PROFILE.md',
-          zh ? '只写正文，标题由 PREFIX 合并；留空则使用 identity 记忆摘要，填写后不再自动追加。' : 'Body only; PREFIX supplies the heading. Empty falls back to the identity summary; when filled, the summary is not appended automatically.',
+          zh ? '只写正文，标题由 PREFIX 合并；identity 记忆摘要总会先加入，这段追加在它后面。' : 'Body only; PREFIX supplies the heading. The identity summary is always included first; this body is appended after it.',
         ),
         slotDoc(
           'persona.personality',
@@ -884,6 +884,13 @@ ${chosen.text}`, 'arbiter');
     const raw = readTextFile(path);
     if (!raw.trim()) return '';
     return raw.replace(/<!--[\s\S]*?-->/g, '').trim();
+  }
+
+  /** PROFILE 槽永远包含 identity 摘要；用户正文追加在后面。 */
+  private composedProfile(): string {
+    const identity = this.identityText();
+    const custom = this.userPromptText('PROFILE.md');
+    return custom ? `${identity}\n\n${custom}` : identity;
   }
 
   /** bot 自己的名字/自称；用于把“用户叫什么”从核心身份里分出来。 */

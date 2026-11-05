@@ -5,7 +5,7 @@
 按顺序：
 
 1. `PREFIX`：`# {{persona.displayName}}`。
-2. `PROFILE`：`## 我是谁` + 用户 `PROFILE.md`；空则用 identity 摘要。
+2. `PROFILE`：`## 我是谁` + identity 摘要 + 用户 `PROFILE.md`（追加在后面；用户不写也保留 identity）。
 3. `PERSONALITY`：`### 性格底色` + 用户 `PERSONALITY.md`；空则整段省略。
 4. `RELATIONSHIP`：`### 我与对方的关系` + 用户 `RELATIONSHIP.md`；空则整段省略。
 5. `GOALS`：`## 表达目标` + 用户 `GOALS.md`；空则用 `DEFAULT_GOALS.md`。
@@ -25,7 +25,7 @@ WebUI 提示词页把每个槽保存到 `<部署根>/prompts/<名字>`，运行�
 
 合并变量（运行时内部使用，不是用户槽可写的占位符）：
 
-- `persona.profile`：用户 `PROFILE.md` 的正文；空则回退到 identity 摘要。填写后不再自动追加 identity。
+- `persona.profile`：identity 摘要 + 用户 `PROFILE.md` 的正文；identity 始终存在，用户正文为空时只保留 identity。
 - `persona.personality`、`persona.relationship`：对应槽的正文；空则不插入。
 - `persona.goals`、`persona.speech`：对应槽的正文；空则回退到内置默认。
 - `persona.identity`：identity records 的摘要（title + content，最多 8 条，按 salience）；没有记录时用 displayName 的默认自述。
@@ -39,7 +39,7 @@ WebUI 提示词页把每个槽保存到 `<部署根>/prompts/<名字>`，运行�
 
 | 角色卡章节 | 放到 | 备注 |
 |---|---|---|
-| `## 我是谁` + `### 基本设定与日常` | `PROFILE.md` | 去掉标题，只留正文；`我是谁` 标题由 PREFIX 补 |
+| `## 我是谁` + `### 基本设定与日常` | `PROFILE.md` | 去掉标题，只留正文；`我是谁` 标题由 PREFIX 补，identity 摘要会自动放在正文前 |
 | `### 性格底色` | `PERSONALITY.md` | 去掉标题 |
 | `### 我与小路泥的关系` | `RELATIONSHIP.md` | 去掉标题 |
 | `## 表达目标` | `GOALS.md` | 去掉标题；留空用内置默认 |

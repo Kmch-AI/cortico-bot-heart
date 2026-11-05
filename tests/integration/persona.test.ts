@@ -237,8 +237,11 @@ describe('HeartPersona integration', () => {
     writeFileSync(join(prompts, 'SPEECH.md'), '- 句尾偶尔加 `+`，不用 Emoji。', 'utf8');
     const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
     expect(segments.find((s) => s.title === 'PREFIX')?.text).toBe(`# ${cfg.identity.displayName}\n\n`);
-    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('我是四时小路，在十字路口发传单。');
-    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('## 我是谁');
+    const profile = segments.find((s) => s.title === 'PROFILE')?.text ?? '';
+    expect(profile).toContain('我的记忆、判断和说话方式构成连续性');
+    expect(profile).toContain('我是四时小路，在十字路口发传单。');
+    expect(profile.indexOf('我的记忆、判断和说话方式构成连续性')).toBeLessThan(profile.indexOf('我是四时小路'));
+    expect(profile).toContain('## 我是谁');
     expect(segments.find((s) => s.title === 'PERSONALITY')?.text).toContain('### 性格底色');
     expect(segments.find((s) => s.title === 'RELATIONSHIP')?.text).toContain('### 我与对方的关系');
     expect(segments.find((s) => s.title === 'GOALS')?.text).toContain('保持角色一致');
@@ -281,6 +284,7 @@ describe('HeartPersona integration', () => {
     });
     expect(segments.map((s) => s.title)).toContain('PREFIX');
     expect(segments.map((s) => s.title)).toContain('PROFILE');
+    expect(segments.find((s) => s.title === 'PROFILE')?.text).toContain('我的记忆、判断和说话方式构成连续性');
     expect(segments.map((s) => s.text).join('\n')).toContain('先问「我想说什么」');
     expect(segments.map((s) => s.text).join('\n')).toContain('QQ env');
     persona.shutdown();

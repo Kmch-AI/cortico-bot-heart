@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+- `PROFILE` 槽现在始终先包含 identity 记忆摘要，再追加用户 `PROFILE.md` 的正文；用户不写也保留 identity。
+- `persona.profile` 合并值同步为 identity + 用户正文；提示词页与文档同步。
+- 其他槽（`PERSONALITY` / `RELATIONSHIP` / `GOALS` / `SPEECH`）行为不变。
+
 ## 0.1.6
 
 - 用户人设槽（`PROFILE` / `PERSONALITY` / `RELATIONSHIP` / `GOALS` / `SPEECH`）不再声明 `persona.displayName` / `persona.identity`；提示词页不再显示这两个变量。
