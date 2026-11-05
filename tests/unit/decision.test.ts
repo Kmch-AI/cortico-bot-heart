@@ -55,6 +55,48 @@ describe('SystemOne client and decision plane', () => {
     expect(JSON.stringify(sent?.state).length).toBeLessThan(4000);
   });
 
+  it('forces a direct reply when the model is only weakly silent', async () => {
+    const fetch = async (): Promise<Response> => response({
+      action: { type: 'choice', choice: 'silence', confidence: 0.12, probabilities: { respond: 0.36, silence: 0.39, defer: 0.25 } },
+      intent: { type: 'choice', choice: 'close', confidence: 0.5, probabilities: {} },
+      stance: { type: 'choice', choice: 'neutral', confidence: 0.5, probabilities: {} },
+      length: { type: 'choice', choice: 'short', confidence: 0.5, probabilities: {} },
+    });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const { plan, trace } = await plane.plan(input, {});
+    expect(trace.mode).toBe('systemone');
+    expect(plan.action).toBe('respond');
+    expect(plan.reason).toContain('direct low-confidence silence -> respond');
+  });
+
+  it('keeps a confident direct silence', async () => {
+    const fetch = async (): Promise<Response> => response({
+      action: { type: 'choice', choice: 'silence', confidence: 0.88, probabilities: { respond: 0.07, silence: 0.88, defer: 0.05 } },
+      intent: { type: 'choice', choice: 'close', confidence: 0.8, probabilities: {} },
+      stance: { type: 'choice', choice: 'neutral', confidence: 0.8, probabilities: {} },
+      length: { type: 'choice', choice: 'short', confidence: 0.8, probabilities: {} },
+    });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const { plan } = await plane.plan(input, {});
+    expect(plan.action).toBe('silence');
+  });
+
+  it('still turns a weak ambient reply into silence', async () => {
+    const fetch = async (): Promise<Response> => response({
+      action: { type: 'choice', choice: 'respond', confidence: 0.2, probabilities: { respond: 0.2, silence: 0.5, defer: 0.3 } },
+      intent: { type: 'choice', choice: 'share', confidence: 0.5, probabilities: {} },
+      stance: { type: 'choice', choice: 'neutral', confidence: 0.5, probabilities: {} },
+      length: { type: 'choice', choice: 'short', confidence: 0.5, probabilities: {} },
+    });
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 500, fetch });
+    const plane = new DecisionPlane({ client, timeoutMs: 500, confidenceThreshold: 0.5 });
+    const { plan } = await plane.plan({ ...input, addressed: false, isPrivate: false }, {});
+    expect(plan.action).toBe('silence');
+    expect(plan.reason).toContain('low confidence -> silence');
+  });
+
   it('asks five appraisal scores and derives importance', async () => {
     let sent: { questions?: Record<string, { criteria?: unknown }> } | undefined;
     const fetch: typeof globalThis.fetch = async (_input, init) => {
