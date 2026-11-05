@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- 对话热路径不再等待 SystemOne 的后台超时：新增 `decision.interactiveTimeoutMs`（默认 1.2s），`turn_plan` 只尝试一次，超时立即启发式。
+- `appraise` 改为在 `turn_plan` 之后后台运行，不再和 `turn_plan` 一起阻塞回复，也避免两个请求并发挤占单槽 llama 服务。
+- SystemOne 客户端支持 `attempts`；超时/5xx 重试只保留在后台路径，热路径不再重试。
+- 控制台不再向模型暴露 `console_send`，并在路由提示中要求直接输出正文；修复控制台只出现工具调用、没有正常消息的问题。
+
 ## 0.1.8
 
 - 用户人设合回一整块 `PERSONA.md`，带类似旧 PREFIX 的默认模板（基本设定、性格底色、关系、表达目标、说话方式）。

@@ -15,7 +15,7 @@
 
 文字和语音往哪里发，由本回合的 `delivery` 决定，不由你改：
 
-- 控制台来源：文字直接在控制台输出；语音用 `voice_speak` 本机播放，不调用 QQ。
+- 控制台来源：文字直接输出正文，不要调用 `console_send`；语音用 `voice_speak` 本机播放，不调用 QQ。
 - QQ 来源：文字 `qq_draft` → `qq_confirm`；语音 `voice_speak({silent:true})` → 拿到 `[blob log:…]` → `qq_draft({voice})` → `qq_confirm`。
 - 其他 World：只使用该 World 自己的 speak/发送工具；没有语音出口就不发语音，没有文字出口就不发。
 - 语音条不带文字、图片或引用；文字和语音是两条独立消息。

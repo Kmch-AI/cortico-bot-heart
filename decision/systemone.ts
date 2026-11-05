@@ -93,15 +93,20 @@ export class SystemOneClient {
     return this.openUntil > (this.opts.now?.() ?? Date.now());
   }
 
-  async ask(req: Omit<SystemOneRequest, 'model'> & { model?: string }, timeoutMs?: number): Promise<SystemOneResponse> {
+  async ask(
+    req: Omit<SystemOneRequest, 'model'> & { model?: string },
+    timeoutMs?: number,
+    attempts = 2,
+  ): Promise<SystemOneResponse> {
     if (!this.opts.baseUrl) throw new SystemOneError('not-configured', '没有配置服务地址');
     if (this.circuitOpen) throw new SystemOneError('circuit-open', 'SystemOne 熔断中');
     const full: SystemOneRequest = { model: req.model ?? this.opts.model, state: req.state, questions: req.questions };
     validate(full);
 
     const timeout = Math.max(100, timeoutMs ?? this.opts.timeoutMs);
+    const maxAttempts = Math.max(1, Math.min(4, Math.trunc(attempts)));
     let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
       timer.unref?.();
@@ -119,7 +124,7 @@ export class SystemOneClient {
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           const err = new SystemOneError('http', `SystemOne HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`, res.status);
-          if (res.status >= 500 && attempt === 0) { lastError = err; continue; }
+          if (res.status >= 500 && attempt < maxAttempts - 1) { lastError = err; continue; }
           throw err;
         }
         const parsed = parseResponse(await res.json());
@@ -134,7 +139,7 @@ export class SystemOneClient {
         } else {
           lastError = new SystemOneError('network', (err as Error)?.message ?? '网络错误');
         }
-        if (attempt === 1) break;
+        if (attempt >= maxAttempts - 1) break;
       } finally {
         clearTimeout(timer);
       }

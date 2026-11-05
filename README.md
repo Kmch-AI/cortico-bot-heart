@@ -10,7 +10,7 @@ Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持�
 - **持久记忆**：SQLite 为真源；写入走保存决策；检索按 hot/warm/cold 与 scope 过滤；记忆是人格的载体。
 - **异步记忆**：钩子只入队，后台直连 `core.llm` 提取；不建 fork/session，不回注主会话，自主记忆保持静默。
 - **语音决策**：只决定「发 / 不发」；发到控制台本机、QQ 还是其他 World，由事件来源和该 World 的 speak 工具决定。
-- **SystemOne**：服务插件提供的 `/v1/systemone` typed questions（`noul` / `choice` / `score`）；不可用时降级到启发式。
+- **SystemOne**：服务插件提供的 `/v1/systemone` typed questions（`noul` / `choice` / `score`）；对话热路径有独立预算（默认 1.2s），超时立即启发式，不阻塞回复。
 - **可组合人设**：PREFIX / BEHAVIOR / MEMORY_PROTOCOL 为包内只读模板；操作者只编辑整块 `PERSONA.md`，它接在 identity 摘要之后。
 
 ## 安装与部署

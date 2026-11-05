@@ -302,7 +302,11 @@ export class HeartPersona implements Persona {
   private worldTools(): ToolDef[] {
     const out: ToolDef[] = [];
     for (const world of this.opts.worlds) {
-      try { out.push(...world.tools()); } catch { /* 单个 World 失败不拖垮工具表 */ }
+      try {
+        const tools = world.tools();
+        // 控制台回复直接输出正文；console_send 只用于主动广播，heart 不暴露，避免模型把回复发成工具调用。
+        out.push(...(world.id === 'console' ? tools.filter((t) => t.name !== 'console_send') : tools));
+      } catch { /* 单个 World 失败不拖垮工具表 */ }
     }
     return out;
   }
@@ -400,24 +404,23 @@ export class HeartPersona implements Persona {
       input,
     });
 
-    const [decided, appraisal] = await Promise.all([
-      this.decision.plan(input, state),
-      this.decision.appraise(text, {
-        mood: { valence: mood.valence, energy: mood.energy, tension: mood.tension },
-        relationship: { familiarity: relationship.familiarity, trust: relationship.trust },
-      }),
-    ]);
+    // 只有 turn_plan 在热路径上等待；appraise 只影响心情/关系，放到后台，不挡住回复。
+    const decided = await this.decision.plan(input, state);
     const plan = decided.plan;
     this.lastTrace = decided.trace;
     this.trace(decided.trace);
-    if (appraisal) {
+    void this.decision.appraise(text, {
+      mood: { valence: mood.valence, energy: mood.energy, tension: mood.tension },
+      relationship: { familiarity: relationship.familiarity, trust: relationship.trust },
+    }).then((appraisal) => {
+      if (!appraisal || this.shutdownDone) return;
       this.mood.appraise(appraisal, last.cursor != null ? String(last.cursor) : undefined, new Date());
       this.relationship.update(scope, {
         familiarity: Math.max(0, appraisal.relationshipDelta) * 0.01,
         trust: Math.max(0, appraisal.relationshipDelta) * 0.005,
         tension: Math.max(0, -appraisal.relationshipDelta) * 0.015,
       });
-    }
+    }).catch(() => { /* 心情评估失败不影响回合 */ });
 
     // 用户明确要求记住时，当回合必须有一句回复；自主记忆仍然可以沉默。
     if (plan.action !== 'respond' && route.text !== 'none'
@@ -976,6 +979,7 @@ ${chosen.text}`, 'arbiter');
     return new DecisionPlane({
       client,
       timeoutMs: cfg.decision.timeoutMs,
+      interactiveTimeoutMs: cfg.decision.interactiveTimeoutMs,
       confidenceThreshold: cfg.decision.confidenceThreshold,
       onTrace: (trace) => this.trace(trace),
     });

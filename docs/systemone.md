@@ -65,8 +65,9 @@ heart 直接使用数值并四舍五入到最近等级。
 
 ## 客户端
 
-- 超时：turn plan 2s；memory write/rerank 3s；appraise 2s。
-- 重试：只对连接失败/5xx 重试一次；4xx 不重试。
+- 热路径预算：`decision.interactiveTimeoutMs`（默认 1.2s）只用于 `turn_plan` 与 `appraise`，且只尝试一次；超时立即启发式，不重试。
+- `appraise` 不再和 `turn_plan` 一起阻塞回合：它在 `turn_plan` 之后后台运行，只影响心情/关系，不影响这一句的回复。
+- 后台超时：`decision.timeoutMs`（默认 2s）用于 memory write/rerank/arbiter；连接失败/5xx 在这些后台路径重试一次，4xx 不重试。
 - 熔断：连续 3 次失败后 60s 直接降级。
 - 缓存：同一事件批的 turn plan 只算一次；同一查询的 rerank 批内复用（0.1 只做单次）。
 - trace：`memory/decisions/YYYY-MM-DD.jsonl`，含 task、模式、延迟、错误、摘要；不写密钥与完整隐私正文。

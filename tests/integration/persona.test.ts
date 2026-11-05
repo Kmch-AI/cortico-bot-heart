@@ -122,6 +122,7 @@ function makePersona(
     ...overrides,
   });
   const worlds = [
+    world('console', [tool('console_send', ['speak']), tool('console_notice', [])]),
     world('qq', [tool('qq_draft', ['speak']), tool('qq_confirm', ['speak'])]),
     world('voice', [tool('voice_speak', ['speak'])]),
   ];
@@ -149,6 +150,14 @@ describe('HeartPersona integration', () => {
     expect(text).toContain('private:1');
     expect(text).toContain('turn plan');
     persona.onBatchEnd();
+    persona.shutdown();
+  });
+
+  it('does not expose console_send as a reply tool', () => {
+    const { persona } = makePersona();
+    const tools = persona.declareSessions()[0]!.tools();
+    expect(tools.some((t) => t.name === 'console_send')).toBe(false);
+    expect(tools.some((t) => t.name === 'console_notice')).toBe(true);
     persona.shutdown();
   });
 

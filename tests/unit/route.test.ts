@@ -37,6 +37,7 @@ describe('ChannelRouter', () => {
     expect(plan.voice).toBe('local');
     expect(plan.voiceAvailable).toBe(true);
     expect(formatDeliveryPlan(plan)).toContain('控制台');
+    expect(formatDeliveryPlan(plan)).toContain('不要调用 console_send');
   });
 
   it('routes QQ text and voice through QQ tools with a target', () => {

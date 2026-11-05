@@ -93,6 +93,34 @@ describe('SystemOne client and decision plane', () => {
     expect(trace.error).toContain('network');
   });
 
+  it('uses the interactive budget with one attempt on the turn-plan path', async () => {
+    let calls = 0;
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      calls++;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    };
+    const client = new SystemOneClient({ baseUrl: 'http://service', model: 'jev', timeoutMs: 5000, fetch });
+    const plane = new DecisionPlane({
+      client,
+      timeoutMs: 5000,
+      interactiveTimeoutMs: 100,
+      confidenceThreshold: 0.5,
+    });
+    const started = Date.now();
+    const { plan, trace } = await plane.plan(input, {});
+    expect(plan.action).toBe('respond');
+    expect(trace.mode).toBe('heuristic');
+    expect(trace.error).toContain('timeout');
+    expect(calls).toBe(1);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('rejects oversized state before sending', async () => {
     let called = false;
     const fetch = async (): Promise<Response> => { called = true; return response({ answer: { type: 'noul', noul: 0.5 } }); };
@@ -108,5 +136,7 @@ describe('SystemOne client and decision plane', () => {
     const cfg = testConfig();
     expect(cfg.mood.inertia).toBeGreaterThan(0);
     expect(cfg.decision.timeoutMs).toBeGreaterThan(0);
+    expect(cfg.decision.interactiveTimeoutMs).toBeGreaterThan(0);
+    expect(cfg.decision.interactiveTimeoutMs).toBeLessThanOrEqual(cfg.decision.timeoutMs);
   });
 });
