@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- 基础提示词模板改为包内只读：PREFIX / BEHAVIOR / MEMORY_PROTOCOL 不再读部署覆盖，WebUI 也不提供编辑；已有部署覆盖会被忽略。
+- PREFIX 开头改为 `# {{persona.displayName}}`，不再硬编码显示名。
+- 新增用户可编辑的 `CUSTOM.md`（自定义人设）：保存到 `<部署根>/prompts/CUSTOM.md`，通过 `{{persona.custom}}` 插在 PREFIX 顶部；可用 `{{persona.displayName}}` 与 `{{persona.identity}}`，留空或只留注释则不插入。
+- 提示词页只把 `CUSTOM.md` 标为可写；`persona.identity` 仍是记忆里 identity 记录的摘要，不是用户人设。
+
 ## 0.1.3
 
 - 移除 Core drop 适配：Core PR [#371](https://github.com/Pal-AI-Lab/Cortico/pull/371) 被维护者拒绝，silence/defer 只走语义沉默（注入“不要回应”，主模型自行 `end_turn`）。

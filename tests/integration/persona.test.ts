@@ -226,15 +226,32 @@ describe('HeartPersona integration', () => {
     persona.shutdown();
   });
 
-  it('reads deployment prompt overrides before package templates', async () => {
+  it('inserts the editable custom persona at the top of PREFIX', async () => {
+    const { persona, dir, cfg } = makePersona();
+    const prompts = join(dir, 'prompts');
+    mkdirSync(prompts, { recursive: true });
+    writeFileSync(join(prompts, 'CUSTOM.md'), '## 自定义人设\n\n我是 {{persona.displayName}}，说话简短。', 'utf8');
+    const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
+    expect(segments.find((s) => s.title === 'PREFIX')?.text).toBe(`# ${cfg.identity.displayName}\n\n`);
+    expect(segments.find((s) => s.title === 'CUSTOM')?.text).toContain(`我是 ${cfg.identity.displayName}，说话简短。`);
+    expect(segments.find((s) => s.title === 'PREFIX_BODY')?.text).toContain('## 我是谁');
+    persona.shutdown();
+  });
+
+  it('keeps base templates read-only and only exposes custom persona for writing', async () => {
     const { persona, dir } = makePersona();
     const prompts = join(dir, 'prompts');
     mkdirSync(prompts, { recursive: true });
-    writeFileSync(join(prompts, 'PREFIX.md'), '# Override\n\n{{persona.displayName}} 的部署前缀。', 'utf8');
+    writeFileSync(join(prompts, 'PREFIX.md'), '# Override\n\n不该生效。', 'utf8');
     const segments = await persona.systemSegments({ now: new Date(), timezone: 'Asia/Shanghai', worlds: [] });
-    const prefix = segments.find((s) => s.title === 'PREFIX');
-    expect(prefix?.text).toContain('部署前缀');
-    expect(prefix?.text).not.toContain('先问「我想说什么」');
+    const joined = segments.map((s) => s.text).join('');
+    expect(joined).not.toContain('Override');
+    expect(joined).toContain('先问「我想说什么」');
+    const docs = persona.webUi('zh').promptDocs ?? [];
+    expect(docs.find((d) => d.key === 'persona.custom')?.deploymentPath).toBe(join(prompts, 'CUSTOM.md'));
+    for (const key of ['persona.prefix', 'persona.behavior', 'persona.memoryProtocol']) {
+      expect(docs.find((d) => d.key === key)?.deploymentPath).toBeUndefined();
+    }
     persona.shutdown();
   });
 
@@ -246,6 +263,7 @@ describe('HeartPersona integration', () => {
       worlds: [{ id: 'qq', envPrompt: 'QQ env' }],
     });
     expect(segments.map((s) => s.title)).toContain('PREFIX');
+    expect(segments.map((s) => s.title)).toContain('CUSTOM');
     expect(segments.map((s) => s.text).join('\n')).toContain('先问「我想说什么」');
     expect(segments.map((s) => s.text).join('\n')).toContain('QQ env');
     persona.shutdown();

@@ -11,6 +11,7 @@ Kmch AI · 心：Cortico 的 bot 层。管理心情、关系、注意力与持�
 - **异步记忆**：钩子只入队，后台直连 `core.llm` 提取；不建 fork/session，不回注主会话，自主记忆保持静默。
 - **语音决策**：只决定「发 / 不发」；发到控制台本机、QQ 还是其他 World，由事件来源和该 World 的 speak 工具决定。
 - **SystemOne**：服务插件提供的 `/v1/systemone` typed questions（`noul` / `choice` / `score`）；不可用时降级到启发式。
+- **可组合人设**：PREFIX / BEHAVIOR / MEMORY_PROTOCOL 为包内只读模板；操作者只写 `CUSTOM.md`，通过 `{{persona.custom}}` 插在 PREFIX 顶部。
 
 ## 安装与部署
 
@@ -60,7 +61,7 @@ blobs/                mem: 句柄
 - 输出 arbiter 已接线：默认 `auto`，只在 `needsArbiter` 或 `output.mode=arbiter` 时直连 `core.llm` 生成候选；候选只做文本，不执行工具、不建 session。
 - 显式「记住」会覆盖 SystemOne 的 skip/defer 并保证当回合回复；不向用户确认保存成功/失败。
 - 自主记忆写入不回注；用户明确要求记住时才在当回合回复。记忆提取与 arbiter 直连 `core.llm`，不创建 fork/session，stock Core 上控制台也不会多开窗口；代价是这些后台调用不进 session/用量表，只写决策 trace。
-- 提示词页可编辑 PREFIX / BEHAVIOR / MEMORY_PROTOCOL；保存写到 `<部署根>/prompts/`，保存后在会话页重载前缀。
+- 提示词页只可编辑 `CUSTOM.md`（自定义人设），它插在 PREFIX 顶部；PREFIX / BEHAVIOR / MEMORY_PROTOCOL 是包内只读模板。保存写到 `<部署根>/prompts/`，保存后在会话页重载前缀。
 - 用户姓名等“关于某人的事实”存为 semantic/relationship，不进入核心身份待审；Memory 页可批准/拒绝待审核心身份。
 
 ## 验证

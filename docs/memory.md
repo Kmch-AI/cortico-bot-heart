@@ -95,7 +95,7 @@
 - `IDENTITY.md` / `VALUES.md` 是由 identity records 生成的视图，不是第二份真源。
 - identity 常驻 hot，但只注入摘要；核心身份变更进入 `identity:pending` 待审队列，由 Memory 页的「待审核心身份」批准后才写入，identity 不物理删除。
 - 模型替换/重启/交接不改变 identity；session 日志不是人格真源。
-- 静态人格文本（PREFIX / BEHAVIOR / MEMORY_PROTOCOL）由操作者在 WebUI 的提示词页编辑；部署覆盖写在 `<部署根>/prompts/`，保存后需要重载前缀。
+- 基础模板（PREFIX / BEHAVIOR / MEMORY_PROTOCOL）随包只读；操作者只在 WebUI 的提示词页编辑 `CUSTOM.md`（自定义人设），它插在 PREFIX 顶部。保存写到 `<部署根>/prompts/`，保存后需要重载前缀。
 
 ## 隐私
 

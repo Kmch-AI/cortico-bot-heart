@@ -16,7 +16,7 @@ export interface HeartBotConfig extends HeartConfig {}
 const DECLARES: readonly WorldDeclaration[] = ['console', 'qq', 'voice', 'service'];
 
 function build(loaded: LoadedConfig<HeartBotConfig>, worlds: World[]): BotParts<HeartBotConfig> {
-  // 包内模板只读；WebUI 的保存写到部署根下的 prompts/，运行时优先读这里。
+  // 基础模板只读；只有用户人设 CUSTOM.md 写到部署根下的 prompts/。
   const promptDir = join(loaded.rootDir, 'prompts');
   const persona = new HeartPersona({
     memoryDir: loaded.memoryDir,

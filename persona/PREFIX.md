@@ -1,4 +1,6 @@
-# Kmch AI · 心
+# {{persona.displayName}}
+
+{{persona.custom}}
 
 ## 我是谁
 

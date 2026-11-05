@@ -24,9 +24,10 @@ Persona 拥有记忆的语义解释权；Memory 是被动数据。World 与 Pers
 | `index.ts` | `BotDefinition`：id、默认配置、World 声明、`build()`、`describe` |
 | `config.ts` | `HeartConfig`、默认值、WebUI 配置组 |
 | `persona/persona.ts` | session、生命周期钩子、回合决策、状态头、worker 接线 |
-| `persona/PREFIX.md` | 稳定人格前缀：身份、表达目标、工具路由 |
+| `persona/PREFIX.md` | 稳定人格前缀：显示名、自定义人设、身份、表达目标、工具路由 |
 | `persona/BEHAVIOR.md` | 交际行为原则：意图、深度、沉默、自主 |
 | `persona/MEMORY_PROTOCOL.md` | 记忆读写协议、隐私、工具 |
+| `persona/CUSTOM.md` | 用户可编辑的人设模板；渲染后插入 PREFIX |
 | `state/mood.ts` | 心情慢变量、衰减、评估 |
 | `state/relationship.ts` | 按 person/group 的关系状态 |
 | `state/attention.ts` | 话题、未完成线程、待接、社交能量 |

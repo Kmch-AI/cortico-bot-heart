@@ -230,27 +230,40 @@ export class HeartPersona implements Persona {
       .filter((w) => w.envPrompt.trim())
       .map((w) => `## ${w.id}\n${w.envPrompt.trim()}`)
       .join('\n\n');
-    // 部署覆盖优先；包内模板只读，WebUI 保存写到 <部署根>/prompts。
-    const read = (name: string): string => {
-      const path = this.promptSource(name);
+    // 基础模板来自包内，始终只读；只有 CUSTOM.md 允许部署覆盖。
+    const readBase = (name: string): string => {
+      const path = this.packagePromptSource(name);
       return existsSync(path) ? readTextFile(path) : '';
     };
+    const custom = this.customPromptText();
     const vars = {
       'persona.identity': identity,
       'persona.displayName': cfg.identity.displayName,
+      'persona.custom': custom,
       'worlds.envPrompts': envPrompts,
     };
+    // 在 CUSTOM 占位符处切开：标题在前，正文在后，用户人设作为独立可编辑段插在中间。
+    const rawPrefix = readBase('PREFIX.md');
+    const marker = '{{persona.custom}}';
+    const [before, after] = rawPrefix.includes(marker) ? rawPrefix.split(marker) : [rawPrefix, ''];
+    const head = renderTemplate(before, vars).replace(/\n{3,}/g, '\n\n').trim();
+    const body = renderTemplate(after, vars).replace(/\n{3,}/g, '\n\n').trim();
+    const behavior = renderTemplate(readBase('BEHAVIOR.md'), vars).replace(/\n{3,}/g, '\n\n').trim();
+    const memoryProtocol = renderTemplate(readBase('MEMORY_PROTOCOL.md'), vars).replace(/\n{3,}/g, '\n\n').trim();
     return [
-      { title: 'PREFIX', text: renderTemplate(read('PREFIX.md'), vars) },
-      { title: 'BEHAVIOR', text: renderTemplate(read('BEHAVIOR.md'), vars) },
-      { title: 'MEMORY_PROTOCOL', text: renderTemplate(read('MEMORY_PROTOCOL.md'), vars) },
-    ].filter((s) => s.text.trim());
+      { title: 'PREFIX', text: head ? `${head}\n\n` : '' },
+      { title: 'CUSTOM', text: custom ? `${custom}\n\n` : '', sourceKey: 'persona.custom' },
+      { title: 'PREFIX_BODY', text: body ? `${body}\n\n` : '' },
+      { title: 'BEHAVIOR', text: behavior ? `${behavior}\n\n` : '' },
+      { title: 'MEMORY_PROTOCOL', text: memoryProtocol },
+    ].filter((s) => s.text.trim() || s.sourceKey);
   }
 
   promptVarValues(): Record<string, string> {
     return {
       'persona.identity': this.identityText(),
       'persona.displayName': this.opts.config().identity.displayName,
+      'persona.custom': this.customPromptText(),
       'worlds.envPrompts': '',
     };
   }
@@ -631,12 +644,25 @@ ${chosen.text}`, 'arbiter');
       ],
       promptDocs: [
         {
+          key: 'persona.custom',
+          title: zh ? '自定义人设' : 'Custom persona',
+          description: zh
+            ? '你写的人设/人格提示词，插在 PREFIX 顶部；留空则不加。可用 {{persona.displayName}} 和 {{persona.identity}}。'
+            : 'Your own persona prompt, inserted at the top of PREFIX; leave empty to omit. Supports {{persona.displayName}} and {{persona.identity}}.',
+          path: this.customPromptSource('CUSTOM.md'),
+          deploymentPath: join(this.opts.promptDir, 'CUSTOM.md'),
+          vars: [
+            { name: 'persona.displayName', description: zh ? '当前显示名。' : 'Current display name.' },
+            { name: 'persona.identity', description: zh ? 'identity 记忆摘要；没有记录时用默认自述。' : 'Identity memory summary, or the default self-description.', multiline: true },
+          ],
+        },
+        {
           key: 'persona.prefix',
           title: 'PREFIX',
-          description: zh ? '稳定人格前缀：身份、表达目标、工具路由。' : 'Stable persona prefix: identity, expressive goals, tool routing.',
-          path: this.promptSource('PREFIX.md'),
-          deploymentPath: join(this.opts.promptDir, 'PREFIX.md'),
+          description: zh ? '内置稳定前缀（只读）：身份、表达目标、工具路由。' : 'Built-in stable prefix (read-only): identity, expressive goals, tool routing.',
+          path: this.packagePromptSource('PREFIX.md'),
           vars: [
+            { name: 'persona.custom', description: zh ? '用户自定义人设；原样插入，留空则不加。' : 'Operator persona prompt; inserted verbatim or omitted when empty.', multiline: true },
             { name: 'persona.identity', description: zh ? 'identity 记录摘要；没有记录时用默认自述。' : 'Identity record summary, or the default self-description.', multiline: true },
             { name: 'persona.displayName', description: zh ? '当前显示名。' : 'Current display name.' },
             { name: 'worlds.envPrompts', description: zh ? '已挂载 World 的环境提示词。' : 'Environment prompts of mounted Worlds.', multiline: true },
@@ -645,16 +671,14 @@ ${chosen.text}`, 'arbiter');
         {
           key: 'persona.behavior',
           title: 'BEHAVIOR',
-          description: zh ? '交际行为与表达原则。' : 'Conversational behavior and expression principles.',
-          path: this.promptSource('BEHAVIOR.md'),
-          deploymentPath: join(this.opts.promptDir, 'BEHAVIOR.md'),
+          description: zh ? '内置交际行为与表达原则（只读）。' : 'Built-in conversational behavior principles (read-only).',
+          path: this.packagePromptSource('BEHAVIOR.md'),
         },
         {
           key: 'persona.memoryProtocol',
           title: 'MEMORY_PROTOCOL',
-          description: zh ? '记忆读写、隐私与冲突处理协议。' : 'Memory read/write, privacy and conflict protocol.',
-          path: this.promptSource('MEMORY_PROTOCOL.md'),
-          deploymentPath: join(this.opts.promptDir, 'MEMORY_PROTOCOL.md'),
+          description: zh ? '内置记忆读写、隐私与冲突处理协议（只读）。' : 'Built-in memory read/write, privacy and conflict protocol (read-only).',
+          path: this.packagePromptSource('MEMORY_PROTOCOL.md'),
         },
       ],
       memory: {
@@ -827,10 +851,28 @@ ${chosen.text}`, 'arbiter');
     return entry?.spec ? structuredClone(entry.spec) : null;
   }
 
-  /** 当前读取的提示词源：部署覆盖存在就用它，否则用包内模板。 */
-  private promptSource(name: string): string {
+  /** 基础模板只从包内读取；部署目录里的同名文件不参与。 */
+  private packagePromptSource(name: string): string {
+    return join(this.opts.packageDir, 'persona', name);
+  }
+
+  /** 用户人设：部署覆盖存在就用它，否则用包内空白模板。 */
+  private customPromptSource(name: string): string {
     const override = join(this.opts.promptDir, name);
     return existsSync(override) ? override : join(this.opts.packageDir, 'persona', name);
+  }
+
+  /** 读取并渲染用户人设；HTML 注释剥掉，空内容不插入。 */
+  private customPromptText(): string {
+    const path = this.customPromptSource('CUSTOM.md');
+    if (!existsSync(path)) return '';
+    const raw = readTextFile(path);
+    if (!raw.trim()) return '';
+    const rendered = renderTemplate(raw, {
+      'persona.displayName': this.opts.config().identity.displayName,
+      'persona.identity': this.identityText(),
+    });
+    return rendered.replace(/<!--[\s\S]*?-->/g, '').trim();
   }
 
   /** bot 自己的名字/自称；用于把“用户叫什么”从核心身份里分出来。 */
